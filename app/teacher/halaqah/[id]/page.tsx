@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button"
 import { ArrowRight, RotateCcw } from "lucide-react"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
 
-
 type EvaluationLevel = "excellent" | "very_good" | "good" | "not_completed" | null
 
 interface EvaluationOption {
@@ -27,6 +26,16 @@ interface StudentAttendance {
 	evaluation?: EvaluationOption
 }
 
+// دالة للحصول على التاريخ الحالي بتوقيت السعودية (بصيغة YYYY-MM-DD)
+const getKsaDateString = () => {
+	return new Intl.DateTimeFormat('en-CA', {
+		timeZone: 'Asia/Riyadh',
+		year: 'numeric',
+		month: '2-digit',
+		day: '2-digit'
+	}).format(new Date());
+}
+
 export default function HalaqahManagement() {
 	const [isLoading, setIsLoading] = useState(true)
 	const router = useRouter()
@@ -37,6 +46,8 @@ export default function HalaqahManagement() {
 	const [hasCircle, setHasCircle] = useState(true)
 	const [isSaving, setIsSaving] = useState(false)
 	const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success">("idle")
+	const [hasSavedToday, setHasSavedToday] = useState(false) // حالة جديدة للتحقق من حفظ اليوم
+
 	const showAlert = useAlertDialog()
 
 	useEffect(() => {
@@ -44,31 +55,35 @@ export default function HalaqahManagement() {
 		const userRole = localStorage.getItem("userRole")
 		const accountNumber = localStorage.getItem("accountNumber")
 
-		// Debug: طباعة القيم الفعلية
-		console.log("[DEBUG] isLoggedIn:", loggedIn, "userRole:", userRole, "accountNumber:", accountNumber)
-
-		// السماح للمعلم أو المشرف أو المدير بالدخول
 		const allowedRoles = ["teacher", "admin", "supervisor"];
 		if (!loggedIn || !allowedRoles.includes(userRole || "")) {
-			console.log("[DEBUG] Redirecting to /login بسبب الشروط")
 			router.push("/login")
 		} else {
 			fetchTeacherData(accountNumber || "")
 		}
 	}, [router])
 
+	// التحقق مما إذا كان المعلم قد قام بالحفظ مسبقاً في هذا اليوم بتوقيت السعودية
+	useEffect(() => {
+		if (teacherData?.halaqah) {
+			const todayKSA = getKsaDateString();
+			const lastSaveDate = localStorage.getItem(`last_save_${teacherData.halaqah}`);
+			
+			if (lastSaveDate === todayKSA) {
+				setHasSavedToday(true);
+			}
+		}
+	}, [teacherData])
+
 	const fetchTeacherData = async (accountNumber: string) => {
 		try {
-			console.log("[v0] Fetching teacher data for account:", accountNumber)
 			const response = await fetch(`/api/teachers?account_number=${accountNumber}`)
 			const data = await response.json()
 
 			if (data.teachers && data.teachers.length > 0) {
 				const teacher = data.teachers[0]
 				setTeacherData(teacher)
-				console.log("[v0] Teacher data:", teacher)
 
-				// Check if teacher has a circle
 				if (teacher.halaqah) {
 					setHasCircle(true)
 					fetchStudents(teacher.halaqah)
@@ -81,7 +96,7 @@ export default function HalaqahManagement() {
 				setIsLoading(false)
 			}
 		} catch (error) {
-			console.error("[v0] Error fetching teacher data:", error)
+			console.error("Error fetching teacher data:", error)
 			setHasCircle(false)
 			setIsLoading(false)
 		}
@@ -89,7 +104,6 @@ export default function HalaqahManagement() {
 
 	const fetchStudents = async (halaqah: string) => {
 		try {
-			console.log("[v0] Fetching students for halaqah:", halaqah)
 			const response = await fetch(`/api/students?circle=${encodeURIComponent(halaqah)}`)
 			const data = await response.json()
 
@@ -102,11 +116,10 @@ export default function HalaqahManagement() {
 					evaluation: {},
 				}))
 				setStudents(mappedStudents)
-				console.log("[v0] Students loaded:", mappedStudents)
 			}
 			setIsLoading(false)
 		} catch (error) {
-			console.error("[v0] Error fetching students:", error)
+			console.error("Error fetching students:", error)
 			setIsLoading(false)
 		}
 	}
@@ -190,16 +203,22 @@ export default function HalaqahManagement() {
 	}
 
 	const handleSave = async () => {
+		// 1. التأكد من تحضير جميع الطلاب أولاً (لم يترك أي طالب بدون حالة)
+		const allStudentsHaveAttendance = students.every((s) => s.attendance !== null)
+		if (!allStudentsHaveAttendance) {
+			await showAlert("الرجاء إدخال حالة الحضور (حاضر، غائب، أو مستأذن) لجميع الطلاب قبل الحفظ", "تحذير")
+			return
+		}
+
+		// 2. التأكد من أن جميع الطلاب الحاضرين تم تقييمهم في كافة الفروع
 		const allPresentsEvaluated = students
 			.filter((s) => s.attendance === "present")
 			.every((s) => s.evaluation?.hafiz && s.evaluation?.tikrar && s.evaluation?.samaa && s.evaluation?.rabet)
 
 		if (!allPresentsEvaluated) {
-			await showAlert("لم يتم تقييم جميع الطلاب الحاضرين! تأكد من تقييم جميع الطلاب قبل الحفظ", "تحذير")
+			await showAlert("لم يتم تقييم جميع الطلاب الحاضرين في كل الفروع! تأكد من إكمال التقييم قبل الحفظ", "تحذير")
 			return
 		}
-
-		console.log("[v0] Saving attendance and evaluation data:", students)
 
 		setIsSaving(true)
 		setSaveStatus("saving")
@@ -207,50 +226,50 @@ export default function HalaqahManagement() {
 		try {
 			const studentsToSave = students.filter((s) => s.attendance !== null)
 
-			for (const student of studentsToSave) {
+			// تجهيز جميع الطلبات لإرسالها دفعة واحدة
+			const savePromises = studentsToSave.map((student) => {
+				let requestBody = {
+					student_id: student.id,
+					teacher_id: teacherData.id,
+					halaqah: teacherData.halaqah,
+					status: student.attendance,
+					hafiz_level: "not_completed",
+					tikrar_level: "not_completed",
+					samaa_level: "not_completed",
+					rabet_level: "not_completed",
+				};
+
 				if (student.attendance === "present" && student.evaluation) {
-					await fetch("/api/attendance", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							student_id: student.id,
-							teacher_id: teacherData.id,
-							halaqah: teacherData.halaqah,
-							status: student.attendance,
-							hafiz_level: student.evaluation.hafiz || "not_completed",
-							tikrar_level: student.evaluation.tikrar || "not_completed",
-							samaa_level: student.evaluation.samaa || "not_completed",
-							rabet_level: student.evaluation.rabet || "not_completed",
-						}),
-					})
-				} else if (student.attendance === "absent" || student.attendance === "excused") {
-					await fetch("/api/attendance", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({
-							student_id: student.id,
-							teacher_id: teacherData.id,
-							halaqah: teacherData.halaqah,
-							status: student.attendance,
-							hafiz_level: "not_completed",
-							tikrar_level: "not_completed",
-							samaa_level: "not_completed",
-							rabet_level: "not_completed",
-						}),
-					})
+					requestBody.hafiz_level = student.evaluation.hafiz || "not_completed";
+					requestBody.tikrar_level = student.evaluation.tikrar || "not_completed";
+					requestBody.samaa_level = student.evaluation.samaa || "not_completed";
+					requestBody.rabet_level = student.evaluation.rabet || "not_completed";
 				}
-			}
+
+				// إرجاع الـ Promise بدون استخدام await هنا
+				return fetch("/api/attendance", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(requestBody),
+				});
+			});
+
+			// تنفيذ جميع الطلبات في نفس الوقت (توازي)
+			await Promise.all(savePromises);
+
+			// تسجيل تاريخ الحفظ لمنع التكرار في نفس اليوم
+			localStorage.setItem(`last_save_${teacherData.halaqah}`, getKsaDateString());
+			setHasSavedToday(true);
 
 			setSaveStatus("success")
 			await showAlert("تم حفظ البيانات بنجاح!", "نجاح")
 
 			setTimeout(() => {
-				handleReset()
 				setSaveStatus("idle")
 				setIsSaving(false)
 			}, 500)
 		} catch (error) {
-			console.error("[v0] Error saving data:", error)
+			console.error("Error saving data:", error)
 			setSaveStatus("idle")
 			setIsSaving(false)
 			await showAlert("حدث خطأ أثناء حفظ البيانات", "خطأ")
@@ -498,19 +517,24 @@ export default function HalaqahManagement() {
 									onClick={handleReset}
 									variant="outline"
 									className="border-2 border-orange-400 text-orange-600 hover:bg-orange-50 font-bold py-6 px-10 text-lg bg-transparent w-[200px]"
-									disabled={isSaving}
+									disabled={isSaving || hasSavedToday}
 								>
 									<RotateCcw className="w-5 h-5 ml-2" />
 									إعادة تعيين
 								</Button>
 								<Button
 									onClick={handleSave}
-									className="bg-gradient-to-r from-[#D4AF37] to-[#C9A961] hover:from-[#C9A961] hover:to-[#BFA050] text-white font-bold py-6 px-10 text-lg w-[200px]"
-									disabled={isSaving}
+									className={`font-bold py-6 px-10 text-lg w-[200px] ${
+										hasSavedToday 
+											? "bg-gray-400 cursor-not-allowed" 
+											: "bg-gradient-to-r from-[#D4AF37] to-[#C9A961] hover:from-[#C9A961] hover:to-[#BFA050] text-white"
+									}`}
+									disabled={isSaving || hasSavedToday}
 								>
-									{saveStatus === "saving" && "جاري الحفظ..."}
-									{saveStatus === "success" && "تم الحفظ!"}
-									{saveStatus === "idle" && "حفظ"}
+									{hasSavedToday && "تم حفظ بيانات اليوم"}
+									{!hasSavedToday && saveStatus === "saving" && "جاري الحفظ..."}
+									{!hasSavedToday && saveStatus === "success" && "تم الحفظ!"}
+									{!hasSavedToday && saveStatus === "idle" && "حفظ"}
 								</Button>
 							</div>
 						</>
