@@ -227,6 +227,8 @@ export default function ProfilePage() {
         return "لم يكمل"
       case "excellent":
         return "ممتاز"
+      case "very_good":
+        return "جيد جداً"
       case "good":
         return "جيد"
       case "average":
