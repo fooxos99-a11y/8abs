@@ -34,6 +34,9 @@ import {
   Pencil,
   Video,
   LinkIcon,
+  Upload,
+  BookOpen,
+  ArrowRight,
 } from "lucide-react"
 
 /* -------------------------------------------------------------------------- */
@@ -90,6 +93,10 @@ export default function AdminPathwaysPage() {
   const [showEditModal, setShowEditModal] = useState(false)
 
   const [notification, setNotification] = useState<string>("")
+  const showNotification = (msg: string) => {
+    setNotification(msg)
+    setTimeout(() => setNotification(""), 3000)
+  }
 
   /* ------------------------------ Content Form ----------------------------- */
   const [contentTitle, setContentTitle] = useState("")
@@ -97,6 +104,9 @@ export default function AdminPathwaysPage() {
   const [contentUrl, setContentUrl] = useState("")
   const [contentType, setContentType] =
     useState<LevelContent["content_type"]>("link")
+  const [uploadMode, setUploadMode] = useState<"url" | "file">("url")
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [isUploading, setIsUploading] = useState(false)
 
   /* ------------------------------- Quiz Form -------------------------------- */
   const [quizQuestion, setQuizQuestion] = useState("")
@@ -171,7 +181,32 @@ export default function AdminPathwaysPage() {
   /* -------------------------------------------------------------------------- */
 
   async function handleAddContent() {
-    if (!contentTitle || !contentUrl) return
+    if (!contentTitle) return
+
+    let finalUrl = contentUrl
+
+    if (uploadMode === "file" && selectedFile) {
+      setIsUploading(true)
+      const ext = selectedFile.name.split(".").pop()
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`
+      const { data, error } = await supabase.storage
+        .from("Contact")
+        .upload(fileName, selectedFile, { upsert: false })
+
+      if (error) {
+        showNotification("فشل رفع الملف: " + error.message)
+        setIsUploading(false)
+        return
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("Contact")
+        .getPublicUrl(fileName)
+      finalUrl = urlData.publicUrl
+      setIsUploading(false)
+    }
+
+    if (!finalUrl) return
 
     await fetch("/api/pathway-contents", {
       method: "POST",
@@ -180,7 +215,7 @@ export default function AdminPathwaysPage() {
         level_id: selectedLevel,
         content_title: contentTitle,
         content_description: contentDescription,
-        content_url: contentUrl,
+        content_url: finalUrl,
         content_type: contentType,
       }),
     })
@@ -189,6 +224,8 @@ export default function AdminPathwaysPage() {
     setContentTitle("")
     setContentDescription("")
     setContentUrl("")
+    setSelectedFile(null)
+    setUploadMode("url")
     loadContents()
   }
 
@@ -231,16 +268,16 @@ export default function AdminPathwaysPage() {
       half_points_applied: false
     });
     if (!error) {
-      setNotification('تمت إضافة مستوى جديد بنجاح');
+      showNotification('تمت إضافة مستوى جديد بنجاح');
       loadLevels();
     } else {
-      setNotification('حدث خطأ أثناء إضافة المستوى');
+      showNotification('حدث خطأ أثناء إضافة المستوى');
     }
   }
 
   async function handleDeleteLevel() {
     if (levels.length === 0) {
-      setNotification('لا يوجد مستويات للحذف');
+      showNotification('لا يوجد مستويات للحذف');
       return;
     }
     // احصل على رقم آخر مستوى
@@ -248,7 +285,7 @@ export default function AdminPathwaysPage() {
     // حذف بدون تأكيد
     const { error } = await supabase.from('pathway_levels').delete().eq('level_number', maxLevel);
     if (!error) {
-      setNotification('تم حذف آخر مستوى بنجاح');
+      showNotification('تم حذف آخر مستوى بنجاح');
       // جلب المستويات من القاعدة مباشرة بعد الحذف
       const { data: newLevels, error: fetchError } = await supabase
         .from('pathway_levels')
@@ -263,10 +300,10 @@ export default function AdminPathwaysPage() {
           setSelectedLevel(1);
         }
       } else {
-        setNotification('تم الحذف لكن لم يتم تحديث القائمة!');
+        showNotification('تم الحذف لكن لم يتم تحديث القائمة!');
       }
     } else {
-      setNotification('حدث خطأ أثناء حذف المستوى: ' + error.message);
+      showNotification('حدث خطأ أثناء حذف المستوى: ' + error.message);
     }
   }
 
@@ -274,10 +311,10 @@ export default function AdminPathwaysPage() {
     if (!level) return;
     const { error } = await supabase.from('pathway_levels').update({ is_locked: !level.is_locked }).eq('level_number', selectedLevel);
     if (!error) {
-      setNotification(level.is_locked ? 'تم فتح المستوى بنجاح' : 'تم قفل المستوى بنجاح');
+      showNotification(level.is_locked ? 'تم فتح المستوى بنجاح' : 'تم قفل المستوى بنجاح');
       loadLevels();
     } else {
-      setNotification('حدث خطأ أثناء تحديث حالة القفل');
+      showNotification('حدث خطأ أثناء تحديث حالة القفل');
     }
   }
 
@@ -291,243 +328,292 @@ export default function AdminPathwaysPage() {
     t === "pdf" ? <FileText /> : t === "video" ? <Video /> : <LinkIcon />
 
   return (
-    <div dir="rtl" className="min-h-screen flex flex-col">
+    <div dir="rtl" className="min-h-screen flex flex-col bg-[#fafaf9]">
       <Header />
 
+      {/* Toast Notification */}
       {notification && (
-        <div className="fixed top-4 inset-x-0 mx-auto max-w-md z-50">
-          <Card>
-            <CardContent className="text-center">{notification}</CardContent>
-          </Card>
+        <div className="fixed top-4 inset-x-0 mx-auto max-w-sm z-50 px-4">
+          <div className="bg-white border border-[#D4AF37]/40 rounded-xl px-5 py-3 shadow-lg text-sm font-medium text-[#1a2332] text-center">
+            {notification}
+          </div>
         </div>
       )}
 
-      <main className="flex-1 container mx-auto py-6 max-w-6xl">
-        {/* نتائج المسار */}
-        <div className="flex justify-end mb-4">
-          <Button
-            className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] font-bold rounded-xl px-6 py-2 text-base flex flex-row-reverse items-center gap-2 shadow-none border-none"
-            onClick={() => router.push("/admin/pathways-results")}
-          >
-            نتائج المسار
-          </Button>
-        </div>
-        {/* LEVEL SELECT */}
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle>المستويات</CardTitle>
-            <div className="flex gap-3 mt-4">
-              <Button onClick={handleAddLevel} className="bg-green-600 hover:bg-green-700 text-white rounded-xl w-9 h-9 flex items-center justify-center shadow-none border-none">
-                <Plus className="w-5 h-5 text-white" />
-              </Button>
-              <Button onClick={handleDeleteLevel} className="bg-red-600 hover:bg-red-700 text-white rounded-xl w-9 h-9 flex items-center justify-center shadow-none border-none">
-                <Trash2 className="w-5 h-5 text-white" />
-              </Button>
-              <Button onClick={handleToggleLockLevel} className={level?.is_locked ? "bg-red-200 hover:bg-red-300 text-white rounded-xl w-9 h-9 flex items-center justify-center shadow-none border-none" : "bg-green-200 hover:bg-green-300 text-white rounded-xl w-9 h-9 flex items-center justify-center shadow-none border-none"}>
-                {level?.is_locked ? <Lock className="w-5 h-5 text-red-600" /> : <Unlock className="w-5 h-5 text-green-600" />}
-              </Button>
-              <Button onClick={() => { setEditTitle(level?.title || ""); setEditDescription(level?.description || ""); setShowEditModal(true); }} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] rounded-xl w-9 h-9 flex items-center justify-center shadow-none border-none">
-                <Pencil className="w-5 h-5" />
-              </Button>
+      <main className="flex-1 py-10 px-4">
+        <div className="container mx-auto max-w-4xl space-y-8">
+
+          {/* Page Header */}
+          <div className="flex items-center justify-between border-b border-[#D4AF37]/40 pb-6">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => router.back()}
+                className="w-9 h-9 rounded-lg border border-[#D4AF37]/40 flex items-center justify-center text-[#C9A961] hover:bg-[#D4AF37]/10 transition-colors"
+              >
+                <ArrowRight className="w-4 h-4" />
+              </button>
+              <div className="w-10 h-10 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/40 flex items-center justify-center">
+                <BookOpen className="w-5 h-5 text-[#D4AF37]" />
+              </div>
+              <h1 className="text-2xl font-bold text-[#1a2332]">إدارة المسار</h1>
             </div>
-          </CardHeader>
-          <CardContent className="grid grid-cols-3 md:grid-cols-6 gap-2">
-            {levels.map((l, idx) => (
-              <div key={l.id} className="flex flex-col gap-2 items-center">
-                <Button
+            <button
+              onClick={() => router.push("/admin/pathways-results")}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors"
+            >
+              نتائج المسار
+            </button>
+          </div>
+
+          {/* Levels Card */}
+          <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#D4AF37]/40 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                  <BookOpen className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <h2 className="text-base font-bold text-[#1a2332]">المستويات</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleAddLevel}
+                  title="إضافة مستوى"
+                  className="w-8 h-8 rounded-lg border border-emerald-200 text-emerald-500 hover:bg-emerald-50 flex items-center justify-center transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleDeleteLevel}
+                  title="حذف آخر مستوى"
+                  className="w-8 h-8 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 flex items-center justify-center transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={handleToggleLockLevel}
+                  title={level?.is_locked ? "فتح المستوى" : "قفل المستوى"}
+                  className={`w-8 h-8 rounded-lg border flex items-center justify-center transition-colors ${level?.is_locked ? "border-red-200 text-red-400 hover:bg-red-50" : "border-emerald-200 text-emerald-500 hover:bg-emerald-50"}`}
+                >
+                  {level?.is_locked ? <Lock className="w-4 h-4" /> : <Unlock className="w-4 h-4" />}
+                </button>
+                <button
+                  onClick={() => { setEditTitle(level?.title || ""); setEditDescription(level?.description || ""); setShowEditModal(true) }}
+                  title="تعديل المستوى"
+                  className="w-8 h-8 rounded-lg border border-[#D4AF37]/50 text-[#C9A961] hover:bg-[#D4AF37]/10 flex items-center justify-center transition-colors"
+                >
+                  <Pencil className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="px-6 py-4 flex flex-wrap gap-2">
+              {levels.map((l) => (
+                <button
+                  key={l.id}
                   onClick={() => setSelectedLevel(l.level_number)}
-                  onDoubleClick={() => {
-                    setPointsEditLevel(l);
-                    setPointsEditValue(l.points);
-                    setShowPointsModal(true);
-                  }}
-                  className={
-                    (l.level_number === selectedLevel
-                      ? "bg-gradient-to-r from-[#d8a355] to-[#c99347] hover:bg-gradient-to-r hover:from-[#d8a355] hover:to-[#c99347] text-[#00312e] font-bold border border-[#d8a355] rounded-xl px-6 py-2 flex items-center gap-2"
-                      : "bg-white text-[#00312e] font-normal border border-[#d8a355] rounded-xl px-6 py-2 flex items-center gap-2 hover:bg-gradient-to-r hover:from-[#d8a355] hover:to-[#c99347] hover:text-[#00312e]")
-                  }
+                  onDoubleClick={() => { setPointsEditLevel(l); setPointsEditValue(l.points); setShowPointsModal(true) }}
                   title="انقر مرتين لتعديل النقاط"
+                  className={`flex items-center gap-1.5 px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                    l.level_number === selectedLevel
+                      ? "border-[#D4AF37] bg-[#D4AF37]/15 text-[#C9A961] font-bold"
+                      : "border-[#D4AF37]/30 text-neutral-600 hover:bg-[#D4AF37]/5 hover:border-[#D4AF37]/50"
+                  }`}
                 >
-                  {l.is_locked ? <Lock className="mr-2 w-4" /> : <Unlock className="mr-2 w-4" />}
+                  {l.is_locked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
                   {l.title}
-                </Button>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* CONTENT */}
-        <Card className="mb-6">
-          <CardHeader className="flex-row justify-between">
-            <div>
-              <CardTitle>محتوى المستوى</CardTitle>
-              <CardDescription>ملفات وروابط تعليمية</CardDescription>
-            </div>
-            <Button onClick={() => setShowContentForm(!showContentForm)} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] font-normal rounded-xl px-6 py-2 text-base flex flex-row-reverse items-center gap-2 shadow-none border-none">
-              <Plus className="ml-2 w-4" />
-              <span>إضافة</span>
-            </Button>
-          </CardHeader>
-
-          <CardContent>
-            {showContentForm && (
-              <div className="space-y-3 mb-6">
-                <Input
-                  placeholder="عنوان المحتوى"
-                  value={contentTitle}
-                  onChange={(e) => setContentTitle(e.target.value)}
-                />
-                <Textarea
-                  placeholder="الوصف"
-                  value={contentDescription}
-                  onChange={(e) => setContentDescription(e.target.value)}
-                />
-                <Input
-                  placeholder="الرابط"
-                  value={contentUrl}
-                  onChange={(e) => setContentUrl(e.target.value)}
-                />
-                <Button onClick={handleAddContent} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] font-normal rounded-xl px-6 py-2 text-base flex flex-row-reverse items-center gap-2 shadow-none border-none">حفظ</Button>
-              </div>
-            )}
-
-            {levelContents.map((c) => (
-              <Card key={c.id} className="mb-2">
-                <CardContent className="flex justify-between">
-                  <div className="flex gap-2">
-                    {icon(c.content_type)}
-                    <span>{c.content_title}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeleteContent(c.id)}
-                  >
-                    <Trash2 className="w-4 text-red-500" />
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* QUIZ */}
-        <Card>
-          <CardHeader className="flex-row justify-between">
-            <CardTitle>الاختبار</CardTitle>
-              <Button onClick={() => setShowQuizForm(!showQuizForm)} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] font-normal rounded-xl px-6 py-2 text-base flex flex-row-reverse items-center gap-2 shadow-none border-none">
-                <Plus className="ml-2 w-4" />
-                <span>سؤال</span>
-              </Button>
-          </CardHeader>
-
-          <CardContent>
-            {showQuizForm && (
-              <div className="space-y-3 mb-6">
-                <Input
-                  placeholder="السؤال"
-                  value={quizQuestion}
-                  onChange={(e) => setQuizQuestion(e.target.value)}
-                />
-                {quizOptions.map((o, i) => (
-                  <Input
-                    key={i}
-                    placeholder={`خيار ${i + 1}`}
-                    value={o}
-                    onChange={(e) => {
-                      const n = [...quizOptions]
-                      n[i] = e.target.value
-                      setQuizOptions(n)
-                    }}
-                  />
-                ))}
-                <Select
-                  value={String(correctAnswer)}
-                  onValueChange={(v) => setCorrectAnswer(Number(v))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {quizOptions.map((_, i) => (
-                      <SelectItem key={i} value={String(i)}>
-                        الخيار {i + 1}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                  <Button onClick={handleAddQuiz} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] font-normal rounded-xl px-6 py-2 text-base flex flex-row-reverse items-center gap-2 shadow-none border-none">حفظ السؤال</Button>
-              </div>
-            )}
-
-            {levelQuizzes.map((q, i) => (
-              <Card key={q.id} className="mb-2">
-                <CardContent className="flex justify-between">
-                  <span>
-                    {i + 1}. {q.question}
-                  </span>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => handleDeleteQuiz(q.id)}
-                  >
-                    <Trash2 className="w-4 text-red-500" />
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </CardContent>
-        </Card>
-
-        {/* Edit Level Modal */}
-        {showEditModal && (
-          <div className="fixed inset-0 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 w-full max-w-md flex flex-col gap-4 border-2 border-[#d8a355]">
-              <h2 className="text-lg font-bold text-[#00312e] mb-2">تعديل اسم ووصف المستوى</h2>
-              <Input value={editTitle} onChange={e => setEditTitle(e.target.value)} placeholder="اسم المستوى" className="mb-2" />
-              <Textarea value={editDescription} onChange={e => setEditDescription(e.target.value)} placeholder="وصف المستوى" className="mb-2" />
-              <div className="flex gap-2 justify-end">
-                <Button onClick={() => setShowEditModal(false)} className="bg-red-600 text-white px-4 py-2 rounded">إلغاء</Button>
-                <Button onClick={async () => {
-                  if (level) {
-                    await supabase.from('pathway_levels').update({ title: editTitle, description: editDescription }).eq('id', level.id);
-                    setShowEditModal(false);
-                    loadLevels();
-                  }
-                }} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] px-4 py-2 rounded">حفظ</Button>
-              </div>
+                </button>
+              ))}
             </div>
           </div>
-        )}
+
+          {/* Content Card */}
+          <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#D4AF37]/40 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-[#1a2332]">محتوى المستوى</h2>
+                  <p className="text-xs text-neutral-400">ملفات وروابط تعليمية</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowContentForm(!showContentForm)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> إضافة محتوى
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-3">
+              {showContentForm && (
+                <div className="space-y-3 p-4 bg-[#fafaf9] rounded-xl border border-[#D4AF37]/20 mb-4">
+                  <Input placeholder="عنوان المحتوى" value={contentTitle} onChange={(e) => setContentTitle(e.target.value)} />
+                  <Textarea placeholder="الوصف (اختياري)" value={contentDescription} onChange={(e) => setContentDescription(e.target.value)} />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("url")}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${uploadMode === "url" ? "border-[#D4AF37] bg-[#D4AF37]/10 text-[#C9A961]" : "border-neutral-200 text-neutral-500 hover:border-[#D4AF37]/50"}`}
+                    >
+                      <LinkIcon className="inline w-3.5 h-3.5 ml-1" /> رابط
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadMode("file")}
+                      className={`flex-1 py-2 rounded-lg border text-sm font-medium transition-colors ${uploadMode === "file" ? "border-[#D4AF37] bg-[#D4AF37]/10 text-[#C9A961]" : "border-neutral-200 text-neutral-500 hover:border-[#D4AF37]/50"}`}
+                    >
+                      <Upload className="inline w-3.5 h-3.5 ml-1" /> رفع ملف
+                    </button>
+                  </div>
+                  {uploadMode === "url" ? (
+                    <Input placeholder="الرابط" value={contentUrl} onChange={(e) => setContentUrl(e.target.value)} />
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-24 border-2 border-dashed border-[#D4AF37]/40 rounded-lg cursor-pointer hover:bg-[#D4AF37]/5 transition-colors">
+                      <input type="file" className="hidden" accept=".pdf,.mp4,.mov,.avi,.doc,.docx,.ppt,.pptx" onChange={(e) => setSelectedFile(e.target.files?.[0] || null)} />
+                      {selectedFile ? (
+                        <span className="text-sm text-[#C9A961] font-medium">{selectedFile.name}</span>
+                      ) : (
+                        <span className="text-sm text-neutral-400">اضغط لاختيار ملف</span>
+                      )}
+                    </label>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowContentForm(false)} className="px-4 py-2 rounded-lg border border-neutral-200 text-neutral-500 text-sm hover:bg-neutral-50 transition-colors">إلغاء</button>
+                    <button
+                      onClick={handleAddContent}
+                      disabled={isUploading}
+                      className="px-4 py-2 rounded-lg border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors disabled:opacity-50"
+                    >
+                      {isUploading ? "جاري الرفع..." : "حفظ"}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {levelContents.length === 0 && !showContentForm && (
+                <p className="text-sm text-neutral-400 text-center py-6">لا يوجد محتوى لهذا المستوى</p>
+              )}
+
+              {levelContents.map((c) => (
+                <div key={c.id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-[#D4AF37]/20 hover:bg-[#D4AF37]/3 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/20 flex items-center justify-center text-[#D4AF37]">
+                      {c.content_type === "pdf" ? <FileText className="w-4 h-4" /> : c.content_type === "video" ? <Video className="w-4 h-4" /> : <LinkIcon className="w-4 h-4" />}
+                    </div>
+                    <span className="text-sm font-medium text-[#1a2332]">{c.content_title}</span>
+                  </div>
+                  <button onClick={() => handleDeleteContent(c.id)} className="w-7 h-7 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Quiz Card */}
+          <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden">
+            <div className="px-6 py-5 border-b border-[#D4AF37]/40 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                  <Pencil className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <h2 className="text-base font-bold text-[#1a2332]">الاختبار</h2>
+              </div>
+              <button
+                onClick={() => setShowQuizForm(!showQuizForm)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors"
+              >
+                <Plus className="w-3.5 h-3.5" /> إضافة سؤال
+              </button>
+            </div>
+
+            <div className="px-6 py-4 space-y-3">
+              {showQuizForm && (
+                <div className="space-y-3 p-4 bg-[#fafaf9] rounded-xl border border-[#D4AF37]/20 mb-4">
+                  <Input placeholder="السؤال" value={quizQuestion} onChange={(e) => setQuizQuestion(e.target.value)} />
+                  {quizOptions.map((o, i) => (
+                    <Input key={i} placeholder={`خيار ${i + 1}`} value={o} onChange={(e) => { const n = [...quizOptions]; n[i] = e.target.value; setQuizOptions(n) }} />
+                  ))}
+                  <Select value={String(correctAnswer)} onValueChange={(v) => setCorrectAnswer(Number(v))}>
+                    <SelectTrigger className="border-[#D4AF37]/30">
+                      <SelectValue placeholder="الإجابة الصحيحة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {quizOptions.map((_, i) => (
+                        <SelectItem key={i} value={String(i)}>الخيار {i + 1}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex justify-end gap-2">
+                    <button onClick={() => setShowQuizForm(false)} className="px-4 py-2 rounded-lg border border-neutral-200 text-neutral-500 text-sm hover:bg-neutral-50 transition-colors">إلغاء</button>
+                    <button onClick={handleAddQuiz} className="px-4 py-2 rounded-lg border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors">حفظ السؤال</button>
+                  </div>
+                </div>
+              )}
+
+              {levelQuizzes.length === 0 && !showQuizForm && (
+                <p className="text-sm text-neutral-400 text-center py-6">لا يوجد أسئلة لهذا المستوى</p>
+              )}
+
+              {levelQuizzes.map((q, i) => (
+                <div key={q.id} className="flex items-center justify-between px-4 py-3 rounded-xl border border-[#D4AF37]/20 hover:bg-[#D4AF37]/3 transition-colors">
+                  <span className="text-sm font-medium text-[#1a2332]">{i + 1}. {q.question}</span>
+                  <button onClick={() => handleDeleteQuiz(q.id)} className="w-7 h-7 rounded-lg border border-red-200 text-red-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-colors">
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+
+        </div>
       </main>
 
       <Footer />
-          {/* نافذة تعديل النقاط */}
-          {showPointsModal && pointsEditLevel && (
-            <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30">
-              <div className="bg-white rounded-xl p-6 w-full max-w-md flex flex-col gap-4 border-2 border-[#d8a355]">
-                <h2 className="text-lg font-bold text-[#00312e] mb-2">تعديل نقاط المستوى</h2>
-                <div className="mb-2 text-[#00312e] font-bold">{pointsEditLevel.title}</div>
-                <Input
-                  type="number"
-                  min={0}
-                  value={pointsEditValue}
-                  onChange={e => setPointsEditValue(Number(e.target.value))}
-                  className="mb-2"
-                />
-                <div className="flex gap-2 justify-end">
-                  <Button onClick={() => setShowPointsModal(false)} className="bg-red-600 text-white px-4 py-2 rounded">إلغاء</Button>
-                  <Button onClick={async () => {
-                    if (pointsEditLevel) {
-                      await supabase.from('pathway_levels').update({ points: pointsEditValue }).eq('id', pointsEditLevel.id);
-                      setShowPointsModal(false);
-                      loadLevels();
-                    }
-                  }} className="bg-gradient-to-r from-[#d8a355] to-[#c99347] text-[#00312e] px-4 py-2 rounded">حفظ</Button>
-                </div>
-              </div>
+
+      {/* Edit Level Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30" dir="rtl">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md border border-[#D4AF37]/40 shadow-xl space-y-4">
+            <h2 className="text-xl font-bold text-[#1a2332]">تعديل المستوى</h2>
+            <Input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} placeholder="اسم المستوى" />
+            <Textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} placeholder="وصف المستوى" />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowEditModal(false)} className="px-4 py-2 rounded-lg border border-neutral-200 text-neutral-500 text-sm hover:bg-neutral-50 transition-colors">إلغاء</button>
+              <button onClick={async () => {
+                if (level) {
+                  await supabase.from("pathway_levels").update({ title: editTitle, description: editDescription }).eq("id", level.id)
+                  setShowEditModal(false)
+                  loadLevels()
+                }
+              }} className="px-4 py-2 rounded-lg border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors">حفظ</button>
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Points Edit Modal */}
+      {showPointsModal && pointsEditLevel && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30" dir="rtl">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md border border-[#D4AF37]/40 shadow-xl space-y-4">
+            <h2 className="text-xl font-bold text-[#1a2332]">تعديل نقاط المستوى</h2>
+            <p className="text-sm font-semibold text-[#C9A961]">{pointsEditLevel.title}</p>
+            <Input type="number" min={0} value={pointsEditValue} onChange={(e) => setPointsEditValue(Number(e.target.value))} />
+            <div className="flex justify-end gap-3">
+              <button onClick={() => setShowPointsModal(false)} className="px-4 py-2 rounded-lg border border-neutral-200 text-neutral-500 text-sm hover:bg-neutral-50 transition-colors">إلغاء</button>
+              <button onClick={async () => {
+                if (pointsEditLevel) {
+                  await supabase.from("pathway_levels").update({ points: pointsEditValue }).eq("id", pointsEditLevel.id)
+                  setShowPointsModal(false)
+                  loadLevels()
+                }
+              }} className="px-4 py-2 rounded-lg border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors">حفظ</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
