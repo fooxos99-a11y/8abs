@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   // جلب جميع سجلات الحضور
   const { data: attendance, error: attendanceError } = await supabase
     .from("attendance_records")
-    .select("id, student_id, date, status, created_at")
+    .select("id, student_id, date, status, created_at, notes")
 
   if (attendanceError) {
     return NextResponse.json({ error: "فشل في جلب سجلات الحضور" }, { status: 500 })
@@ -60,6 +60,7 @@ export async function GET(request: Request) {
         attendance_date: rec.date,
         status: rec.status,
         created_at: rec.created_at,
+        notes: rec.notes ?? null,
         hafiz_level: evalRec?.hafiz_level ?? null,
         tikrar_level: evalRec?.tikrar_level ?? null,
         samaa_level: evalRec?.samaa_level ?? null,
@@ -74,6 +75,7 @@ export async function GET(request: Request) {
         attendance_date: selectedDate,
         status: null,
         created_at: null,
+        notes: null,
         hafiz_level: null,
         tikrar_level: null,
         samaa_level: null,
