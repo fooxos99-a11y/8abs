@@ -39,6 +39,7 @@ interface AttendanceRecord {
   student_name: string
   status: string | null
   created_at: string
+  notes?: string | null
   hafiz_level?: string | null
   tikrar_level?: string | null
   samaa_level?: string | null
@@ -182,6 +183,7 @@ export default function StudentDailyAttendancePage() {
                         <TableHead className="text-right text-[#1a2332] font-bold text-lg">السماع</TableHead>
                         <TableHead className="text-right text-[#1a2332] font-bold text-lg">الربط</TableHead>
                         <TableHead className="text-right text-[#1a2332] font-bold text-lg">الحالة</TableHead>
+                        <TableHead className="text-center text-[#1a2332] font-bold text-lg">الملاحظات</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -196,7 +198,7 @@ export default function StudentDailyAttendancePage() {
                         return selected > today;
                       })() ? (
                         <TableRow>
-                          <TableCell colSpan={4} className="text-center py-8">
+                          <TableCell colSpan={7} className="text-center py-8">
                             <div className="text-gray-500">لا يمكن عرض بيانات الحضور لتاريخ مستقبلي</div>
                           </TableCell>
                         </TableRow>
@@ -244,11 +246,18 @@ export default function StudentDailyAttendancePage() {
                                     <span className="text-gray-500 font-bold">لم يتم التسجيل</span>
                                   )}
                                 </TableCell>
+                                <TableCell className="text-center text-base max-w-[240px]">
+                                  {record.notes ? (
+                                    <span className="text-neutral-700">{record.notes}</span>
+                                  ) : (
+                                    <span className="text-gray-400">—</span>
+                                  )}
+                                </TableCell>
                               </TableRow>
                             ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={6} className="text-center py-8">
+                            <TableCell colSpan={7} className="text-center py-8">
                               <div className="text-gray-500">لا توجد سجلات للعرض في التاريخ المحدد</div>
                             </TableCell>
                           </TableRow>
