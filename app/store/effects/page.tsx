@@ -300,8 +300,11 @@ export default function EffectsPage() {
       }
     } catch (error) {
       console.error("Error fetching purchases:", error)
+      // Fallback: use localStorage cache
       const cached = localStorage.getItem(`effect_purchases_${studentId}`)
       if (cached) setPurchases(JSON.parse(cached))
+      const notActivated = localStorage.getItem(`effect_not_activated_${studentId}`)
+      if (notActivated) setPurchasedNotActivated(JSON.parse(notActivated))
     }
   }
 
@@ -352,6 +355,12 @@ export default function EffectsPage() {
       if (response.ok) {
         const result = await response.json()
         setStudentPoints(result.remaining_points)
+
+        // Update purchases state + localStorage immediately as cache (survives API failures on refresh)
+        const updatedPurchases = [...purchases, effectId]
+        setPurchases(updatedPurchases)
+        localStorage.setItem(`effect_purchases_${studentId}`, JSON.stringify(updatedPurchases))
+
         const updatedNotActivated = [...purchasedNotActivated, effectId]
         setPurchasedNotActivated(updatedNotActivated)
         localStorage.setItem(`effect_not_activated_${studentId}`, JSON.stringify(updatedNotActivated))
