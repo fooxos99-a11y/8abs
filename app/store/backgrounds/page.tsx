@@ -151,8 +151,11 @@ export default function BackgroundsPage() {
       }
     } catch (error) {
       console.error("[v0] Error fetching purchases:", error)
+      // Fallback: use localStorage cache
       const cached = localStorage.getItem(`purchases_${studentId}`)
       if (cached) setPurchases(JSON.parse(cached))
+      const notActivated = localStorage.getItem(`bg_not_activated_${studentId}`)
+      if (notActivated) setPurchasedNotActivated(JSON.parse(notActivated))
     }
   }
 
@@ -241,6 +244,12 @@ export default function BackgroundsPage() {
       if (response.ok) {
         const result = await response.json()
         setStudentPoints(result.remaining_points)
+
+        // Update purchases state + localStorage immediately as cache (survives API failures on refresh)
+        const updatedPurchases = [...purchases, product.id]
+        setPurchases(updatedPurchases)
+        localStorage.setItem(`purchases_${studentId}`, JSON.stringify(updatedPurchases))
+
         const updatedNotActivated = [...purchasedNotActivated, product.id]
         setPurchasedNotActivated(updatedNotActivated)
         localStorage.setItem(`bg_not_activated_${studentId}`, JSON.stringify(updatedNotActivated))
