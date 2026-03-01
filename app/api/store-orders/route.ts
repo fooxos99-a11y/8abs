@@ -103,6 +103,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "فشل في تسجيل الطلب" }, { status: 500 });
     }
 
+    if (body.theme_key) {
+      // إذا كان المنتج مظهرًا، قم بتسجيله في جدول المشتريات (purchases) ليكون متاحًا في الملف الشخصي
+      // نتجاهل الخطأ هنا في حال كان مسجلاً مسبقًا
+      await supabase.from("purchases").insert({
+        student_id,
+        product_id: `theme_${body.theme_key}`,
+        price
+      });
+    }
+
     console.log("[store-orders] Success");
     return NextResponse.json({ success: true, remaining_store_points: newStorePoints });
   } catch (error) {
