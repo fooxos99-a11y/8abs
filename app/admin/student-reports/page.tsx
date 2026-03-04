@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { ArrowRight, Download, Calendar, BookOpen } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Circle {
   name: string
@@ -25,6 +26,8 @@ interface StudentReport {
 }
 
 export default function StudentReportsPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الطلاب");
+
   const router = useRouter()
   const [circles, setCircles] = useState<Circle[]>([])
   const [selectedCircle, setSelectedCircle] = useState<string | null>(null)
@@ -36,7 +39,7 @@ export default function StudentReportsPage() {
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       fetchCircles()
@@ -155,6 +158,8 @@ export default function StudentReportsPage() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white" dir="rtl">

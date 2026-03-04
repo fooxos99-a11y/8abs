@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -7,6 +7,7 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ArrowRight, BookOpen, Trophy, Users } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 const supabase = createBrowserClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,15 +15,23 @@ const supabase = createBrowserClient(
 )
 
 export default function PathwaysResultsPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة المسار");
+
   const [levels, setLevels] = useState<any[]>([])
   const [results, setResults] = useState<any[]>([])
   const [selectedLevel, setSelectedLevel] = useState<string>("")
+  const [selectedHalaqah, setSelectedHalaqah] = useState<string>("")
+  const [circles, setCircles] = useState<{ id: string; name: string }[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
 
   useEffect(() => {
-    loadLevels()
+    fetchCircles()
   }, [])
+
+  useEffect(() => {
+    if (selectedHalaqah) loadLevels()
+  }, [selectedHalaqah])
 
   useEffect(() => {
     if (selectedLevel) {
@@ -32,14 +41,33 @@ export default function PathwaysResultsPage() {
     }
   }, [selectedLevel])
 
+  async function fetchCircles() {
+    try {
+      const res = await fetch('/api/circles');
+      const data = await res.json();
+      if (data.circles) {
+        setCircles(data.circles);
+        if (data.circles.length > 0) setSelectedHalaqah(data.circles[0].name);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function loadLevels() {
+    if (!selectedHalaqah) return;
     setIsLoading(true)
     const { data } = await supabase
       .from("pathway_levels")
       .select("level_number, title")
+      .eq("halaqah", selectedHalaqah)
       .order("level_number")
     setLevels(data || [])
-    if (data && data.length > 0) setSelectedLevel(String(data[0].level_number))
+    if (data && data.length > 0) {
+      setSelectedLevel(String(data[0].level_number))
+    } else {
+      setSelectedLevel("")
+    }
     setIsLoading(false)
   }
 
@@ -71,6 +99,8 @@ export default function PathwaysResultsPage() {
     )
   }
 
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
+
   return (
     <div dir="rtl" className="min-h-screen flex flex-col bg-[#fafaf9]">
       <Header />
@@ -92,6 +122,26 @@ export default function PathwaysResultsPage() {
               </div>
               <h1 className="text-2xl font-bold text-[#1a2332]">نتائج المسار</h1>
             </div>
+          </div>
+
+          {/* Halaqah Selector */}
+          <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm p-6">
+            <div className="flex items-center gap-3 mb-5 pb-4 border-b border-[#D4AF37]/20">
+              <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                <Users className="w-4 h-4 text-[#D4AF37]" />
+              </div>
+              <h2 className="text-base font-bold text-[#1a2332]">اختر الحلقة</h2>
+            </div>
+            <Select value={selectedHalaqah} onValueChange={(val) => { setSelectedHalaqah(val); setSelectedLevel(''); }}>
+              <SelectTrigger className="w-full sm:w-72 border-[#D4AF37]/40 text-[#1a2332] rounded-xl h-11 focus:ring-[#D4AF37]/30">
+                <SelectValue placeholder="اختر الحلقة" />
+              </SelectTrigger>
+              <SelectContent>
+                {circles.map((c) => (
+                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           {/* Level Selector */}

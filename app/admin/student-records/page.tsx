@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { BookOpen } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState } from "react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Circle {
   id: string
@@ -14,6 +15,8 @@ interface Circle {
 }
 
 export default function StudentRecordsPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الطلاب");
+
   const router = useRouter()
   const [circles, setCircles] = useState<Circle[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,6 +40,8 @@ export default function StudentRecordsPage() {
   const handleCircleClick = (circleId: string) => {
     router.push(`/admin/student-records/${circleId}`)
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white" dir="rtl">

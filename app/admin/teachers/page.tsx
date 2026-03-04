@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from 'next/navigation'
@@ -19,6 +19,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserPlus, Trash2, ArrowRight, Settings, Users, User, Edit2 } from 'lucide-react'
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Teacher {
   id: string
@@ -36,6 +37,8 @@ interface Circle {
 }
 
 export default function TeacherManagement() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة المعلمين");
+
   const [isLoading, setIsLoading] = useState(true)
   const [isLoadingData, setIsLoadingData] = useState(true)
   const [teachers, setTeachers] = useState<Teacher[]>([])
@@ -56,7 +59,7 @@ export default function TeacherManagement() {
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       setIsLoading(false)
@@ -211,6 +214,8 @@ export default function TeacherManagement() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fafaf9]" dir="rtl">

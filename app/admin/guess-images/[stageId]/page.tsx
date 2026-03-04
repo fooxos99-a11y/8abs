@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Plus, Pencil, Trash2, Upload, ImageIcon } from "lucide-react";
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 type GuessImage = {
   id: string;
@@ -22,6 +23,8 @@ type Stage = {
 };
 
 export default function GuessImagesByStage() {
+  useAdminAuth();
+
   const router = useRouter();
   const params = useParams();
   const stageId = Number(params.stageId);

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Calendar, Clock } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface AttendanceRecord {
   id: string
@@ -22,6 +23,8 @@ interface AttendanceRecord {
 }
 
 export default function TeacherAttendancePage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("التقارير");
+
   const [isLoading, setIsLoading] = useState(true)
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [filteredRecords, setFilteredRecords] = useState<AttendanceRecord[]>([])
@@ -38,7 +41,7 @@ export default function TeacherAttendancePage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
 
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       fetchAttendanceRecords()
@@ -105,6 +108,8 @@ export default function TeacherAttendancePage() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white">

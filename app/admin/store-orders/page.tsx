@@ -1,12 +1,15 @@
-"use client";
+﻿"use client";
 import { getSupabase } from "@/lib/supabase";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ArrowRight, ShoppingBag, Package, Check, Trash2 } from "lucide-react";
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 export default function StoreOrdersPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة المتجر");
+
   const router = useRouter();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,10 +32,23 @@ export default function StoreOrdersPage() {
     setLoading(true);
     const supabase = getSupabase();
     const { data } = await supabase
-      .from("store_orders")
-      .select("*")
-      .order("created_at", { ascending: false });
-    setOrders(data || []);
+        .from("store_orders")
+        .select('*')
+        .order("created_at", { ascending: false });
+
+      const { data: productsData } = await supabase
+        .from("store_products")
+        .select('id, theme_key');
+
+      const themeProductIds = new Set((productsData || [])
+        .filter(p => !!p.theme_key)
+        .map(p => p.id));
+
+      const filteredOrders = (data || []).filter((o: any) => {
+        return !themeProductIds.has(o.product_id);
+      });
+      
+    setOrders(filteredOrders);
     setLoading(false);
   }
 
@@ -109,6 +125,8 @@ export default function StoreOrdersPage() {
   }
 
   const currentList = showDelivered ? delivered : notDelivered;
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div dir="rtl" className="min-h-screen flex flex-col bg-[#fafaf9]">

@@ -1,8 +1,9 @@
-"use client";
+﻿"use client";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Stage {
   id: number;
@@ -10,6 +11,8 @@ interface Stage {
 }
 
 export default function GuessStagesAdmin() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الألعاب");
+
   const [stages, setStages] = useState<Stage[]>([]);
   const [newStage, setNewStage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,6 +53,8 @@ export default function GuessStagesAdmin() {
     fetchStages();
     setLoading(false);
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="container mx-auto p-4 max-w-xl">

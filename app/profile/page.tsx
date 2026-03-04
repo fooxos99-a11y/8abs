@@ -7,7 +7,7 @@ import { Footer } from "@/components/footer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { User, Trophy, Award, Calendar, Star, BarChart3 } from "lucide-react"
+import { User, Trophy, Award, Calendar, Star, BarChart3, Medal, Gem, Flame, Zap, Crown, Heart } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { ThemeSwitcher } from "@/components/theme-switcher"
@@ -37,6 +37,13 @@ interface AttendanceRecord {
   rabet_level: string | null
 }
 
+interface StudentAchievement {
+  id: string
+  title: string
+  icon_type: string
+  date: string
+}
+
 interface RankingData {
   globalRank: number
   circleRank: number
@@ -46,7 +53,6 @@ interface RankingData {
 }
 
 export default function ProfilePage() {
-    const [achievements, setAchievements] = useState<any[]>([]);
   const [studentData, setStudentData] = useState<StudentData | null>(null)
   // تحديث السجلات يدويًا
   const handleRefreshRecords = () => {
@@ -70,6 +76,7 @@ export default function ProfilePage() {
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [isLoadingRecords, setIsLoadingRecords] = useState(false)
   const [rankingData, setRankingData] = useState<RankingData | null>(null)
+  const [achievements, setAchievements] = useState<StudentAchievement[]>([])
   const confirmDialog = useConfirmDialog()
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [themeUpdateTrigger, setThemeUpdateTrigger] = useState(0)
@@ -132,23 +139,12 @@ export default function ProfilePage() {
         setStudentData(student)
         fetchRankingData(student.id)
         fetchAttendanceRecords(student.id)
-        fetchStudentAchievements(student.id)
+        fetchAchievements(student.id)
       }
       setIsLoading(false)
     } catch (error) {
       console.error("[v0] Error fetching student data:", error)
       setIsLoading(false)
-    }
-  }
-
-  // جلب إنجازات الطالب
-  const fetchStudentAchievements = async (studentId: string) => {
-    try {
-      const response = await fetch(`/api/achievements?student_id=${encodeURIComponent(studentId)}`);
-      const data = await response.json();
-      if (data.achievements) setAchievements(data.achievements);
-    } catch (error) {
-      setAchievements([]);
     }
   }
 
@@ -163,6 +159,32 @@ export default function ProfilePage() {
       }
     } catch (error) {
       console.error("[v0] Error fetching ranking data:", error)
+    }
+  }
+
+  const fetchAchievements = async (studentId: string) => {
+    try {
+      const res = await fetch(`/api/achievements?student_id=${studentId}`)
+      if (res.ok) {
+        const data = await res.json()
+        setAchievements(data.achievements || [])
+      }
+    } catch (e) {
+      console.error("[profile] Error fetching achievements:", e)
+    }
+  }
+
+  const renderAchievementIcon = (type: string, cls = "w-5 h-5") => {
+    const color = "text-[#d8a355]"
+    switch (type) {
+      case "medal":  return <Medal  className={`${cls} ${color}`} />
+      case "gem":    return <Gem    className={`${cls} ${color}`} />
+      case "star":   return <Star   className={`${cls} ${color} fill-[#d8a355]/40`} />
+      case "flame":  return <Flame  className={`${cls} ${color}`} />
+      case "zap":    return <Zap    className={`${cls} ${color}`} />
+      case "crown":  return <Crown  className={`${cls} ${color}`} />
+      case "heart":  return <Heart  className={`${cls} ${color}`} />
+      default:       return <Trophy className={`${cls} ${color}`} />
     }
   }
 
@@ -227,8 +249,6 @@ export default function ProfilePage() {
         return "لم يكمل"
       case "excellent":
         return "ممتاز"
-      case "very_good":
-        return "جيد جداً"
       case "good":
         return "جيد"
       case "average":
@@ -480,14 +500,22 @@ export default function ProfilePage() {
                         <p className="text-2xl font-bold text-[#c99347] mb-2">لاتوجد إنجازات حاليا</p>
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {achievements.map((ach) => (
-                          <div key={ach.id} className="bg-white rounded-xl shadow p-4 flex flex-col items-center border-2 border-[#d8a355]/20">
-                            {ach.icon_type === "trophy" && <Trophy className="w-12 h-12 text-[#d8a355] mb-2" />}
-                            {ach.icon_type === "medal" && <Award className="w-12 h-12 text-[#d8a355] mb-2" />}
-                            {ach.icon_type === "gem" && <Star className="w-12 h-12 text-[#d8a355] mb-2" />}
-                            <div className="font-bold text-lg text-[#1a2332] mb-1">{ach.title}</div>
-                            <div className="text-sm text-[#c99347] mb-1">{ach.date}</div>
+                          <div
+                            key={ach.id}
+                            className="flex items-center gap-3 p-4 rounded-xl border-2 bg-white"
+                            style={{ borderColor: "#d8a35533" }}
+                          >
+                            <div className="w-11 h-11 rounded-full bg-[#d8a355]/10 border border-[#d8a355]/30 flex items-center justify-center shrink-0">
+                              {renderAchievementIcon(ach.icon_type)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-bold text-[#1a2332] truncate">{ach.title}</p>
+                              <p className="text-xs text-neutral-400 mt-0.5">
+                                {new Date(ach.date).toLocaleDateString("ar-SA")}
+                              </p>
+                            </div>
                           </div>
                         ))}
                       </div>

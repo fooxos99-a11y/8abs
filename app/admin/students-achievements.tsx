@@ -1,9 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useRouter } from "next/navigation";
+import { Header } from "@/components/header";
+import { Footer } from "@/components/footer";
 import { Button } from "@/components/ui/button";
-import { Award, Medal, Gem, Trash2, Plus, ArrowRight, User, Trophy, Star } from "lucide-react";
+import { Award, Medal, Gem, Trash2, Plus, ArrowRight, User, Trophy, Star, Flame, Zap, Crown, Heart } from "lucide-react";
 
 interface Student {
   id: string;
@@ -18,6 +20,7 @@ interface Achievement {
 }
 
 function StudentsAchievementsAdmin() {
+  const router = useRouter();
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [icon, setIcon] = useState<string>("trophy");
@@ -25,7 +28,6 @@ function StudentsAchievementsAdmin() {
   const [isSaving, setIsSaving] = useState(false);
   const [achievementsMap, setAchievementsMap] = useState<Record<string, Achievement[]>>({});
 
-  // جلب البيانات
   useEffect(() => {
     fetch("/api/students")
       .then((res) => res.json())
@@ -60,7 +62,6 @@ function StudentsAchievementsAdmin() {
         level: "ممتاز",
       }),
     });
-
     const res = await fetch(`/api/achievements?student_id=${selectedStudent.id}`);
     const achData = await res.json();
     setAchievementsMap((prev) => ({ ...prev, [selectedStudent.id]: achData.achievements || [] }));
@@ -71,162 +72,182 @@ function StudentsAchievementsAdmin() {
   };
 
   const handleDelete = async (achievementId: string, studentId: string) => {
-    if(!confirm("هل أنت متأكد من حذف هذا الإنجاز؟")) return;
+    if (!confirm("هل أنت متأكد من حذف هذا الإنجاز؟")) return;
     await fetch(`/api/achievements?id=${achievementId}`, { method: "DELETE" });
-    
     const res = await fetch(`/api/achievements?student_id=${studentId}`);
     const achData = await res.json();
     setAchievementsMap((prev) => ({ ...prev, [studentId]: achData.achievements || [] }));
   };
 
-  // أيقونة ديناميكية
-  const renderIcon = (type: string, size = "w-6 h-6", active = true) => {
-    const colorClass = active ? "text-[#d8a355]" : "text-gray-300";
+  const renderIcon = (type: string, cls = "w-4 h-4") => {
+    const color = "text-[#D4AF37]";
     switch (type) {
-      case "medal": return <Medal className={`${size} ${colorClass}`} />;
-      case "gem": return <Gem className={`${size} ${colorClass}`} />;
-      default: return <Award className={`${size} ${colorClass}`} />;
+      case "medal":  return <Medal  className={`${cls} ${color}`} />;
+      case "gem":    return <Gem    className={`${cls} ${color}`} />;
+      case "star":   return <Star   className={`${cls} ${color}`} />;
+      case "flame":  return <Flame  className={`${cls} ${color}`} />;
+      case "zap":    return <Zap    className={`${cls} ${color}`} />;
+      case "crown":  return <Crown  className={`${cls} ${color}`} />;
+      case "heart":  return <Heart  className={`${cls} ${color}`} />;
+      default:       return <Award  className={`${cls} ${color}`} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-[#fcf9f5] p-6" dir="rtl">
-      {/* الهيدر الرئيسي */}
-      <div className="max-w-4xl mx-auto mb-10 text-center">
-        <div className="inline-flex items-center justify-center p-4 rounded-full bg-[#d8a355]/10 mb-4 border border-[#d8a355]/20">
-            <Trophy className="w-10 h-10 text-[#d8a355]" />
-        </div>
-        <h1 className="text-3xl font-bold text-gray-800 mb-2">لوحة التميز والإنجازات</h1>
-        <div className="h-1 w-24 bg-[#d8a355] mx-auto rounded-full mt-2"></div>
-      </div>
+    <div className="min-h-screen flex flex-col bg-[#fafaf9]" dir="rtl">
+      <Header />
+      <main className="flex-1 py-8 px-4">
+        <div className="container mx-auto max-w-4xl space-y-6">
 
-      <div className="max-w-4xl mx-auto">
-        {!selectedStudent ? (
-          /* قائمة الطلاب */
-          <div className="grid gap-6">
-            {students.map((student) => (
-              <Card key={student.id} className="group overflow-hidden border border-[#d8a355]/20 shadow-sm hover:shadow-md hover:border-[#d8a355] transition-all duration-300 bg-white">
-                
-                <CardHeader className="flex flex-row items-center justify-between pb-4 border-b border-gray-100">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-full bg-[#d8a355] flex items-center justify-center shadow-lg shadow-[#d8a355]/20 text-white">
-                        <User className="w-6 h-6" />
-                    </div>
-                    <div>
-                        <CardTitle className="text-lg font-bold text-gray-800">{student.name}</CardTitle>
-                        <span className="text-xs font-medium text-[#d8a355] bg-[#d8a355]/10 px-2 py-0.5 rounded-full mt-1 inline-block">
-                             {achievementsMap[student.id]?.length || 0} وسام
-                        </span>
-                    </div>
-                  </div>
-                  <Button 
-                    onClick={() => setSelectedStudent(student)} 
-                    className="bg-white border-2 border-[#d8a355] text-[#d8a355] hover:bg-[#d8a355] hover:text-white font-bold gap-2 transition-all"
-                  >
-                    <Plus className="w-4 h-4" /> إضافة جديد
-                  </Button>
-                </CardHeader>
-
-                <CardContent className="pt-4">
-                  <div className="min-h-[60px]">
-                    {(achievementsMap[student.id]?.length > 0) ? (
-                      <div className="flex flex-wrap gap-3">
-                        {achievementsMap[student.id].map((ach) => (
-                          <div key={ach.id} className="relative group/item flex items-center gap-2 bg-[#d8a355]/5 px-4 py-2 rounded-full border border-[#d8a355]/20">
-                            {renderIcon(ach.icon_type, "w-4 h-4")}
-                            <span className="text-sm font-semibold text-gray-700">{ach.title}</span>
-                            <button 
-                                onClick={() => handleDelete(ach.id, student.id)}
-                                className="mr-2 p-1 hover:bg-red-100 rounded-full text-red-400 opacity-0 group-hover/item:opacity-100 transition-all scale-0 group-hover/item:scale-100"
-                                title="حذف"
-                            >
-                                <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-2">
-                         <span className="text-xs text-gray-400 italic">لا توجد إنجازات مسجلة حالياً</span>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        ) : (
-          /* واجهة إضافة إنجاز */
-          <div className="max-w-lg mx-auto">
-            <Button 
-                variant="ghost" 
-                onClick={() => setSelectedStudent(null)} 
-                className="mb-4 text-gray-500 hover:text-[#d8a355] hover:bg-transparent p-0 gap-2"
+          {/* Page header */}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => selectedStudent ? setSelectedStudent(null) : router.push("/admin/dashboard")}
+              className="w-10 h-10 rounded-full bg-white border border-[#D4AF37]/30 flex items-center justify-center text-neutral-500 hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] transition-all shadow-sm"
             >
-                <ArrowRight className="w-4 h-4" /> الرجوع للقائمة
-            </Button>
-            
-            <Card className="border border-[#d8a355]/20 shadow-xl bg-white">
-              <div className="h-2 w-full bg-[#d8a355]" />
-              <CardContent className="p-8">
-                <div className="text-center mb-8">
-                    <div className="w-16 h-16 bg-[#d8a355]/10 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <Star className="w-8 h-8 text-[#d8a355]" />
-                    </div>
-                    <h2 className="text-2xl font-bold text-gray-800">إنجاز جديد</h2>
-                    <p className="text-gray-500 text-sm mt-1">تخصيص وسام للطالب <span className="text-[#d8a355] font-bold">{selectedStudent.name}</span></p>
-                </div>
+              <ArrowRight className="w-5 h-5 rotate-180" />
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                <Trophy className="w-5 h-5 text-[#D4AF37]" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-[#1a2332]">
+                  {selectedStudent ? `إضافة إنجاز — ${selectedStudent.name}` : "إنجازات الطلاب"}
+                </h1>
+                <p className="text-sm text-neutral-400 mt-0.5">
+                  {selectedStudent ? "اختر رمزاً وأدخل عنوان الإنجاز" : "تحكم في أوسمة وإنجازات الطلاب"}
+                </p>
+              </div>
+            </div>
+          </div>
 
-                {/* اختيار الأيقونة */}
-                <div className="mb-8">
-                    <label className="text-xs font-bold text-gray-400 uppercase mb-4 block text-center tracking-widest">اختر الرمز</label>
-                    <div className="flex justify-center gap-4">
-                        {["trophy", "medal", "gem"].map((type) => (
-                            <button
-                                key={type}
-                                onClick={() => setIcon(type)}
-                                className={`
-                                    p-4 rounded-xl border-2 transition-all duration-200 flex flex-col items-center gap-2 w-24
-                                    ${icon === type 
-                                        ? "border-[#d8a355] bg-[#d8a355] text-white shadow-lg shadow-[#d8a355]/30 transform -translate-y-1" 
-                                        : "border-gray-100 bg-gray-50 text-gray-400 hover:border-[#d8a355]/50"
-                                    }
-                                `}
-                            >
-                                {renderIcon(type, "w-6 h-6", icon === type)}
-                                <span className="text-xs font-bold">
-                                    {type === 'trophy' ? 'كأس' : type === 'medal' ? 'ميدالية' : 'جوهرة'}
-                                </span>
-                            </button>
-                        ))}
+          {!selectedStudent ? (
+            /* ── قائمة الطلاب ── */
+            <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden">
+              <div className="px-6 py-5 border-b border-[#D4AF37]/40 flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
+                  <Trophy className="w-4 h-4 text-[#D4AF37]" />
+                </div>
+                <h2 className="text-base font-bold text-[#1a2332]">قائمة الطلاب</h2>
+                <span className="mr-auto text-sm text-neutral-400">{students.length} طالب</span>
+              </div>
+              <div className="divide-y divide-[#D4AF37]/15">
+                {students.length === 0 ? (
+                  <div className="py-16 text-center text-neutral-400 text-sm">لا يوجد طلاب</div>
+                ) : students.map((student) => (
+                  <div key={student.id} className="flex items-center justify-between px-6 py-4 hover:bg-[#D4AF37]/5 transition-colors gap-4">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-full bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center shrink-0">
+                        <User className="w-4 h-4 text-[#D4AF37]" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-bold text-[#1a2332]">{student.name}</p>
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {(achievementsMap[student.id]?.length > 0) ? (
+                            achievementsMap[student.id].map((ach) => (
+                              <div key={ach.id} className="group/item flex items-center gap-1 bg-[#D4AF37]/8 border border-[#D4AF37]/25 px-2.5 py-0.5 rounded-full">
+                                {renderIcon(ach.icon_type)}
+                                <span className="text-xs text-neutral-700">{ach.title}</span>
+                                <button
+                                  onClick={() => handleDelete(ach.id, student.id)}
+                                  className="mr-0.5 opacity-0 group-hover/item:opacity-100 text-red-400 hover:text-red-600 transition-all"
+                                  title="حذف"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ))
+                          ) : (
+                            <span className="text-xs text-neutral-400 italic">لا توجد إنجازات</span>
+                          )}
+                        </div>
+                      </div>
                     </div>
+                    <button
+                      onClick={() => setSelectedStudent(student)}
+                      className="flex items-center gap-1.5 text-sm h-9 px-4 rounded-lg border border-[#D4AF37]/50 text-[#C9A961] hover:bg-[#D4AF37]/10 hover:text-[#D4AF37] transition-all font-medium shrink-0"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      إضافة
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            /* ── نافذة إضافة إنجاز ── */
+            <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden max-w-lg mx-auto">
+              <div className="px-6 py-5 border-b border-[#D4AF37]/40">
+                <h2 className="text-base font-bold text-[#1a2332]">إنجاز جديد</h2>
+                <p className="text-sm text-neutral-400 mt-0.5">للطالب: <span className="text-[#C9A961] font-semibold">{selectedStudent.name}</span></p>
+              </div>
+              <div className="p-6 space-y-6">
+                {/* اختيار الرمز */}
+                <div>
+                  <p className="text-sm font-medium text-neutral-600 mb-3">اختر الرمز</p>
+                  <div className="grid grid-cols-4 gap-2">
+                    {[
+                      { type: "trophy", label: "كأس",     Icon: Trophy },
+                      { type: "medal",  label: "ميدالية", Icon: Medal  },
+                      { type: "gem",    label: "جوهرة",   Icon: Gem    },
+                      { type: "star",   label: "نجمة",    Icon: Star   },
+                      { type: "flame",  label: "شعلة",    Icon: Flame  },
+                      { type: "zap",    label: "برق",     Icon: Zap    },
+                      { type: "crown",  label: "تاج",     Icon: Crown  },
+                      { type: "heart",  label: "قلب",     Icon: Heart  },
+                    ].map(({ type, label, Icon }) => (
+                      <button
+                        key={type}
+                        onClick={() => setIcon(type)}
+                        className={`flex flex-col items-center gap-2 py-3 rounded-xl border-2 transition-all font-medium text-sm
+                          ${icon === type
+                            ? "border-[#D4AF37] bg-[#D4AF37]/10 text-[#C9A961]"
+                            : "border-neutral-100 bg-neutral-50 text-neutral-400 hover:border-[#D4AF37]/40"
+                          }`}
+                      >
+                        <Icon className="w-6 h-6" />
+                        {label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* حقل الإدخال */}
-                <div className="space-y-6">
-                    <div className="relative">
-                        <input
-                            className="w-full border-2 border-gray-100 rounded-lg px-4 py-3 outline-none focus:border-[#d8a355] focus:ring-4 focus:ring-[#d8a355]/10 transition-all text-gray-700 font-medium bg-gray-50 focus:bg-white"
-                            placeholder="عنوان الإنجاز (مثال: حفظ جزء عم)"
-                            value={achievementName}
-                            onChange={(e) => setAchievementName(e.target.value)}
-                            autoFocus
-                        />
-                    </div>
-
-                    <Button 
-                        onClick={handleSave} 
-                        disabled={isSaving || !achievementName} 
-                        className="w-full h-12 bg-[#d8a355] hover:bg-[#c49248] text-white font-bold rounded-lg shadow-md transition-all active:scale-95"
-                    >
-                        {isSaving ? "جاري الحفظ..." : "تأكيد الإنجاز"}
-                    </Button>
+                <div>
+                  <p className="text-sm font-medium text-neutral-600 mb-2">عنوان الإنجاز</p>
+                  <input
+                    className="w-full border border-neutral-200 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 transition-all text-[#1a2332] bg-[#fafaf9]"
+                    placeholder="مثال: حفظ جزء عم"
+                    value={achievementName}
+                    onChange={(e) => setAchievementName(e.target.value)}
+                    autoFocus
+                  />
                 </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
+
+                {/* الأزرار */}
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    variant="outline"
+                    onClick={() => setSelectedStudent(null)}
+                    className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600"
+                  >
+                    إلغاء
+                  </Button>
+                  <Button
+                    onClick={handleSave}
+                    disabled={isSaving || !achievementName}
+                    className="border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm h-9 rounded-lg font-medium"
+                  >
+                    {isSaving ? "جاري الحفظ..." : "حفظ الإنجاز"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+      <Footer />
     </div>
   );
 }

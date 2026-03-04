@@ -23,12 +23,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, alreadyCompleted: true });
     }
 
+    // fetch student halaqah
+    const { data: studentRow } = await supabase.from('students').select('halaqah').eq('id', student_id).single();
+    const halaqah = studentRow?.halaqah;
+
     // جلب حالة خصم النصف من pathway_levels
-    const { data: levelData, error: levelError } = await supabase
+    let levelQuery = supabase
       .from("pathway_levels")
       .select("id, points, half_points_applied")
-      .eq("level_number", level_number)
-      .maybeSingle();
+      .eq("level_number", level_number);
+    if (halaqah) {
+      levelQuery = levelQuery.eq("halaqah", halaqah);
+    }
+    const { data: levelData, error: levelError } = await levelQuery.maybeSingle();
 
     if (levelError || !levelData) {
       return NextResponse.json({ error: "تعذر جلب بيانات المستوى" }, { status: 500 });

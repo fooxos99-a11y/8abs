@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { User, Edit2, Save, X } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface AdminData {
   id: string
@@ -22,6 +23,8 @@ interface AdminData {
 }
 
 export default function AdminProfilePage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth();
+
   const [isLoading, setIsLoading] = useState(true)
   const [adminData, setAdminData] = useState<AdminData | null>(null)
   const [isEditing, setIsEditing] = useState(false)
@@ -34,7 +37,7 @@ export default function AdminProfilePage() {
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || userRole === "student" || userRole === "teacher" || !userRole) {
       router.push("/login")
     } else {
       fetchAdminData()
@@ -46,11 +49,13 @@ export default function AdminProfilePage() {
       const accountNumber = localStorage.getItem("accountNumber")
       const supabase = createClient()
 
+      const adminRoles = ["admin", "مدير", "سكرتير", "مشرف تعليمي", "مشرف تربوي", "مشرف برامج"]
       const { data, error } = await supabase
         .from("users")
         .select("*")
         .eq("account_number", Number(accountNumber))
-        .eq("role", "admin")
+        .neq("role", "student")
+        .neq("role", "teacher")
         .single()
 
       if (error) {
@@ -137,6 +142,8 @@ export default function AdminProfilePage() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white">

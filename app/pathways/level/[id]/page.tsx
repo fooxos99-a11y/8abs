@@ -81,7 +81,7 @@ export default function LevelPage() {
           .maybeSingle();
         if (studentRow && studentRow.id) {
           studentId = studentRow.id;
-          localStorage.setItem("studentId", studentId);
+          localStorage.setItem("studentId", studentId as string);
         } else {
           // إذا لم يوجد uuid، أوقف العملية
           alert("تعذر جلب معرف الطالب الصحيح. يرجى إعادة تسجيل الدخول.");
@@ -113,17 +113,26 @@ export default function LevelPage() {
   useEffect(() => {
     setIsLoading(true);
     setError("");
+    const currentUserStr = localStorage.getItem("currentUser");
+    const currentUser = currentUserStr ? JSON.parse(currentUserStr) : null;
+    const halaqah = currentUser?.halaqah;
+
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     );
     // جلب محتوى المستوى
     const fetchContents = async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("pathway_contents")
         .select("*")
-        .eq("level_id", levelId)
-        .order("id", { ascending: true });
+        .eq("level_id", levelId);
+      
+      if (halaqah) {
+        query = query.eq("halaqah", halaqah);
+      }
+      
+      const { data, error } = await query.order("id", { ascending: true });
       if (error) {
         setError("خطأ في جلب محتوى المستوى");
         setContents([]);
@@ -133,11 +142,16 @@ export default function LevelPage() {
     };
     // جلب أسئلة المستوى
     const fetchQuestions = async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("pathway_level_questions")
         .select("*")
-        .eq("level_number", levelId)
-        .order("id", { ascending: true });
+        .eq("level_number", levelId);
+        
+      if (halaqah) {
+        query = query.eq("halaqah", halaqah);
+      }
+      
+      const { data, error } = await query.order("id", { ascending: true });
       if (error) {
         setError("خطأ في جلب أسئلة المستوى");
         setQuestions([]);
@@ -183,7 +197,20 @@ export default function LevelPage() {
                           </div>
                           {content.content_description && <div className="text-gray-600 mb-4 text-lg">{content.content_description}</div>}
                           {content.content_url && (
-                            <a href={content.content_url} target="_blank" rel="noopener noreferrer" className="text-[#d8a355] font-bold no-underline hover:no-underline focus:no-underline active:no-underline text-lg">رابط المحتوى</a>
+                            <div className="w-full mt-4 flex justify-center">
+                              {content.content_type === "video" || content.content_type?.includes("video") || content.content_url.match(/\.(mp4|webm|ogg)$/i) ? (
+                                <video controls className="w-full max-h-[400px] rounded-lg shadow-md">
+                                  <source src={content.content_url} type="video/mp4" />
+                                  متصفحك لا يدعم تشغيل الفيديو.
+                                </video>
+                              ) : content.content_type === "image" || content.content_type?.includes("image") || content.content_url.match(/\.(jpeg|jpg|gif|png|webp)$/i) ? (
+                                <img src={content.content_url} alt={content.content_title} className="max-w-full max-h-[400px] rounded-lg shadow-md object-contain" />
+                              ) : content.content_type === "pdf" || content.content_type?.includes("pdf") || content.content_url.match(/\.pdf$/i) ? (
+                                <iframe src={`${content.content_url}#toolbar=0`} className="w-full h-[500px] rounded-lg shadow-md border-0" title={content.content_title} />
+                              ) : (
+                                <iframe src={content.content_url} className="w-full h-[500px] rounded-lg shadow-md border-0" title={content.content_title} />
+                              )}
+                            </div>
                           )}
                         </div>
                       ))

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from 'next/navigation'
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { useToast } from "@/hooks/use-toast"
 import { Plus } from 'lucide-react'
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 type ChallengeType =
   | "multiple_choice"
@@ -22,6 +23,8 @@ type ChallengeType =
   | "instant_memory"
 
 export default function DailyChallengesAdmin() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الألعاب");
+
   const [isLoading, setIsLoading] = useState(true)
   const [weekSchedule, setWeekSchedule] = useState<any[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -74,7 +77,7 @@ export default function DailyChallengesAdmin() {
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       loadSchedule()
@@ -165,6 +168,8 @@ export default function DailyChallengesAdmin() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white">

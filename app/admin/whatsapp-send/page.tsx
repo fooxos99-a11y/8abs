@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -11,6 +11,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { MessageCircle, Send, Users, CheckCircle2, XCircle, Loader2, Phone } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Student {
   id: string
@@ -20,6 +21,8 @@ interface Student {
 }
 
 export default function WhatsAppSendPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("الإرسال إلى أولياء الأمور");
+
     // إدارة الرسائل الجاهزة المشتركة
     const [readyMessages, setReadyMessages] = useState<{id:number,text:string}[]>([])
     const [isLoadingReady, setIsLoadingReady] = useState(false)
@@ -88,7 +91,7 @@ export default function WhatsAppSendPage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
 
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       fetchStudents()
@@ -234,6 +237,8 @@ export default function WhatsAppSendPage() {
     )
   }
 
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
+
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#faf8f5] to-white">
       <Header />
@@ -250,8 +255,9 @@ export default function WhatsAppSendPage() {
                 </h1>
               </div>
               <Button
+                variant="outline"
                 onClick={() => router.push("/admin/whatsapp-replies")}
-                className="bg-gradient-to-r from-[#D4AF37] to-[#C9A961] text-[#1f3233] font-bold border-none"
+                className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600"
               >
                 <MessageCircle className="w-4 h-4 ml-2" />
                 عرض الردود
@@ -285,7 +291,7 @@ export default function WhatsAppSendPage() {
                         <Button
                           type="button"
                           variant="outline"
-                          className="text-xs bg-gradient-to-r from-[#D4AF37] to-[#C9A961] text-[#1f3233] font-bold border-none"
+                          className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600"
                           onClick={handleAddReadyMessage}
                         >
                           إضافة
@@ -302,10 +308,10 @@ export default function WhatsAppSendPage() {
                             <div key={msg.id} className="flex items-center gap-2 bg-gray-100 rounded px-2 py-1">
                               <span className="flex-1 text-xs text-gray-700">{msg.text}</span>
                               <div className="flex gap-2">
-                                <Button type="button" size="sm" variant="outline" className="text-xs px-2 py-0 bg-gradient-to-r from-[#D4AF37] to-[#C9A961] text-[#1f3233] font-bold border-none" onClick={()=>setMessage(prev=>prev?prev+"\n"+msg.text:msg.text)}>
+                                <Button type="button" size="sm" variant="outline" className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600" onClick={()=>setMessage(prev=>prev?prev+"\n"+msg.text:msg.text)}>
                                   إدراج
                                 </Button>
-                                <Button type="button" size="sm" variant="destructive" className="text-xs px-2 py-0" onClick={()=>handleDeleteReadyMessage(msg.id)}>
+                                <Button type="button" size="sm" variant="outline" className="text-sm h-9 rounded-lg border-red-300 text-red-500 hover:bg-red-50 hover:text-red-600" onClick={()=>handleDeleteReadyMessage(msg.id)}>
                                   حذف
                                 </Button>
                               </div>
@@ -343,7 +349,8 @@ export default function WhatsAppSendPage() {
                     <Button
                       onClick={handleSendMessages}
                       disabled={isSending || selectedStudents.length === 0 || !message.trim()}
-                      className="w-full bg-gradient-to-r from-[#D4AF37] to-[#C9A961] text-[#1a2332] font-bold border-none"
+                      variant="outline"
+                      className="w-full text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600"
                     >
                       {isSending ? (
                         <>
@@ -382,7 +389,7 @@ export default function WhatsAppSendPage() {
                       <Button
                         onClick={handleSelectAll}
                         variant="outline"
-                        className="whitespace-nowrap"
+                        className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600 whitespace-nowrap"
                       >
                         {selectedStudents.length === filteredStudents.length
                           ? "إلغاء تحديد الكل"

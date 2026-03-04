@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Mail, Clock, CheckCircle, Archive, ArchiveX, Trash2 } from "lucide-react"
 import { useEffect, useState } from "react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface ContactMessage {
   id: string
@@ -26,6 +27,8 @@ const subjectLabels: Record<string, string> = {
 }
 
 export default function ReportsPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("التقارير");
+
     // دالة لفتح السجل اليومي في نافذة جديدة
     const openDailyAttendance = () => {
       window.open("/admin/student-daily-attendance", "_blank")
@@ -137,6 +140,8 @@ export default function ReportsPage() {
 
     return date.toLocaleDateString("ar-SA")
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white" dir="rtl">

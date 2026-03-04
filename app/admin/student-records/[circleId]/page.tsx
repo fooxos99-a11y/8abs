@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowRight } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useRouter, useParams } from "next/navigation"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Student {
   id: string
@@ -16,6 +17,8 @@ interface Student {
 }
 
 export default function CircleAttendancePage() {
+  useAdminAuth();
+
     // تحديث بيانات الطلاب
     const fetchStudents = async (circleName: string) => {
       try {

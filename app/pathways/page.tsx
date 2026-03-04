@@ -94,33 +94,19 @@ interface PathwayLevel {
 
 
 
-async function fetchLevels(supabase: any) {
+async function fetchLevels(supabase: any, halaqah?: string) {
 
+  let query = supabase.from('pathway_levels').select('*');
 
+  if (halaqah) {
+    query = query.eq('halaqah', halaqah);
+  }
 
-  const { data, error } = await supabase
-
-
-
-    .from('pathway_levels')
-
-
-
-    .select('*')
-
-
-
-    .order('level_number', { ascending: true });
-
-
+  const { data, error } = await query.order('level_number', { ascending: true });
 
   if (error) throw error;
 
-
-
   return data;
-
-
 
 }
 
@@ -163,105 +149,72 @@ export default function PathwaysPage() {
 
 
   useEffect(() => {
-
-
-
-    const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-
-
-
-    const role = localStorage.getItem("userRole")
-
-
-
-    setUserRole(role)
-
-
+    const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+    const role = localStorage.getItem("userRole");
+    setUserRole(role);
 
     const supabase = createBrowserClient(
-
-
-
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-
-
-
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-
-
-
     );
 
-
-
-    fetchLevels(supabase).then((levelsFromDb) => {
-
-
-
-      if (loggedIn && role === "student") {
-
-
-
-        loadPathwayData(levelsFromDb)
-
-
-
-      } else {
-
-
-
-        setLevels(levelsFromDb.map((l:any) => ({
-
-
-
-          id: l.level_number,
-
-
-
-          title: l.title,
-
-
-
-          description: l.description,
-
-
-
-          week: l.level_number,
-
-
-
-          isLocked: false,
-
-
-
-          isCompleted: false,
-
-
-
-          points: 100,
-
-
-
-          userPoints: 0,
-
-
-
-        })))
-
-
-
-        setIsLoading(false)
-
-
-
+    async function init() {
+      let studentHalaqah = null;
+      let studentId = localStorage.getItem("studentId");
+      const currentUserStr = localStorage.getItem("currentUser");
+      
+      if (currentUserStr) {
+        try {
+          const currentUser = JSON.parse(currentUserStr);
+          studentHalaqah = currentUser.halaqah;
+          if (!studentId && currentUser) {
+             studentId = currentUser.id || currentUser.account_number;
+          }
+        } catch (e) {}
       }
 
+      // Fetch fresh halaqah from DB directly to handle admin changes
+      if (loggedIn && role === "student" && studentId) {
+         try {
+           const { data: studentData } = await supabase
+             .from("students")
+             .select("halaqah")
+             .eq("id", studentId)
+             .maybeSingle();
 
+           if (!studentData) {
+             // Fallback if studentId was actually account_number
+             const { data: studentDataAlt } = await supabase
+               .from("students")
+               .select("halaqah")
+               .eq("account_number", studentId)
+               .maybeSingle();
+             if (studentDataAlt) studentHalaqah = studentDataAlt.halaqah;
+           } else {
+             studentHalaqah = studentData.halaqah;
+           }
+         } catch(e) {}
+      }
 
-    })
+      const levelsFromDb = await fetchLevels(supabase, studentHalaqah || undefined);
 
-
-
+      if (loggedIn && role === "student") {
+        await loadPathwayData(levelsFromDb);
+      } else {
+        setLevels(levelsFromDb.map((l:any) => ({
+          id: l.level_number,
+          title: l.title,
+          description: l.description,
+          week: l.level_number,
+          isLocked: false,
+          isCompleted: false,
+          points: 100,
+          userPoints: 0,
+        })));
+        setIsLoading(false);
+      }
+    }
+    init();
   }, [])
 
 
@@ -404,35 +357,21 @@ export default function PathwaysPage() {
 
       const processedLevels = levelsToUse.map((level: any) => {
 
-
-
         const isCompleted = completedMap.hasOwnProperty(level.level_number);
-
-
 
         return {
 
-
-
           ...level,
 
-
+          id: level.level_number,
 
           isLocked: level.is_locked === true,
 
-
-
           isCompleted,
-
-
 
           userPoints: isCompleted ? completedMap[level.level_number] : (level.points ?? 100),
 
-
-
         }
-
-
 
       });
 

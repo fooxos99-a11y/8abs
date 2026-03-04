@@ -25,14 +25,14 @@ export async function POST(request: Request) {
   try {
     const supabase = await createClient();
     const body = await request.json();
-    const { level_id, content_title, content_description, content_url, content_type } = body;
+    const { level_id, content_title, content_description, content_url, content_type, halaqah } = body;
     if (!level_id || !content_title || !content_type) {
       return NextResponse.json({ error: "جميع الحقول مطلوبة" }, { status: 400 });
     }
     const { data, error } = await supabase
       .from("pathway_contents")
       .insert([
-        { level_id, content_title, content_description, content_url, content_type }
+        { level_id, content_title, content_description, content_url, content_type, halaqah }
       ])
       .select()
       .single();
@@ -49,14 +49,19 @@ export async function GET(request: Request) {
     const supabase = await createClient();
     const { searchParams } = new URL(request.url);
     const level_id = searchParams.get("level_id");
+    const halaqah = searchParams.get("halaqah");
+    
     if (!level_id) {
       return NextResponse.json({ error: "رقم المستوى مطلوب" }, { status: 400 });
     }
-    const { data, error } = await supabase
-      .from("pathway_contents")
-      .select("*")
-      .eq("level_id", level_id)
-      .order("id");
+    
+    let query = supabase.from("pathway_contents").select("*").eq("level_id", level_id);
+    if (halaqah) {
+        query = query.eq("halaqah", halaqah);
+    }
+    
+    const { data, error } = await query.order("id");
+    
     if (error) throw error;
     return NextResponse.json({ contents: data });
   } catch (error) {

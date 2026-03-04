@@ -15,7 +15,7 @@ export default function CompetitionsPage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const role = localStorage.getItem("userRole")
 
-    if (!loggedIn || (role !== "teacher" && role !== "admin")) {
+    if (!loggedIn || !role || role === "student") {
       router.push("/login")
       return
     }

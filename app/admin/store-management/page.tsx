@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -7,8 +7,11 @@ import { Input } from "@/components/ui/input";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { ArrowRight, ShoppingBag, Tag, Package, Plus, Trash2, Image as ImageIcon, X } from "lucide-react";
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 export default function StoreManagementPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة المتجر");
+
   const router = useRouter();
   const [products, setProducts] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
@@ -109,6 +112,11 @@ export default function StoreManagementPage() {
   }
 
   async function handleDeleteCategory(id: string) {
+    const category = categories.find(c => c.id === id);
+    if (category?.name === "المظاهر") {
+      alert("لا يمكن حذف فئة المظاهر الأساسية");
+      return;
+    }
     showConfirm("سيتم حذف الفئة وكل المنتجات المرتبطة بها. هل أنت متأكد؟", async () => {
       setLoading(true);
       const supabase = getSupabase();
@@ -116,6 +124,8 @@ export default function StoreManagementPage() {
       fetchData();
     });
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div dir="rtl" className="min-h-screen flex flex-col bg-[#fafaf9]">
@@ -177,10 +187,10 @@ export default function StoreManagementPage() {
                     </button>
                   </form>
                   <div className="flex flex-wrap gap-2">
-                    {categories.length === 0 ? (
-                      <p className="text-xs text-neutral-400 w-full text-center py-2">لا توجد فئات</p>
+                    {categories.filter(cat => cat.name !== "المظاهر").length === 0 ? (
+                      <p className="text-xs text-neutral-400 w-full text-center py-2">لا توجد فئات إضافية</p>
                     ) : (
-                      categories.map((cat) => (
+                      categories.filter(cat => cat.name !== "المظاهر").map((cat) => (
                         <div key={cat.id} className="flex items-center gap-1.5 bg-[#D4AF37]/8 text-[#C9A961] px-3 py-1.5 rounded-lg text-sm font-medium border border-[#D4AF37]/25">
                           <span>{cat.name}</span>
                           <button onClick={() => handleDeleteCategory(cat.id)} className="text-[#D4AF37]/50 hover:text-red-500 transition-colors">
@@ -247,7 +257,7 @@ export default function StoreManagementPage() {
                       className="w-full h-10 appearance-none bg-white border border-[#D4AF37]/30 rounded-lg px-3 text-sm text-neutral-700 focus:outline-none focus:ring-2 focus:ring-[#D4AF37]/30 transition-all"
                     >
                       <option value="">اختر الفئة...</option>
-                      {categories.map((cat) => (
+                      {categories.filter(cat => cat.name !== "المظاهر").map((cat) => (
                         <option key={cat.id} value={cat.id}>{cat.name}</option>
                       ))}
                     </select>
@@ -269,11 +279,11 @@ export default function StoreManagementPage() {
               <div className="flex items-center justify-between mb-5">
                 <h2 className="text-lg font-bold text-[#1a2332]">قائمة المنتجات</h2>
                 <span className="px-3 py-1 rounded-full border border-[#D4AF37]/30 bg-[#D4AF37]/8 text-sm font-semibold text-[#C9A961]">
-                  {products.length} منتج
+                  {products.filter(p => !p.theme_key).length} منتج
                 </span>
               </div>
 
-              {products.length === 0 ? (
+              {products.filter(p => !p.theme_key).length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-24 bg-white rounded-2xl border border-dashed border-[#D4AF37]/40">
                   <div className="w-12 h-12 rounded-xl bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center mb-3 text-[#D4AF37]">
                     <ShoppingBag className="w-6 h-6" />
@@ -283,7 +293,7 @@ export default function StoreManagementPage() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {products.map((prod) => (
+                  {products.filter(p => !p.theme_key).map((prod) => (
                     <div key={prod.id} className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col">
                       {/* Product Image */}
                       <div className="h-36 w-full bg-[#fafaf9] relative overflow-hidden flex items-center justify-center">

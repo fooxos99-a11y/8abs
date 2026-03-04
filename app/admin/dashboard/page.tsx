@@ -1,9 +1,9 @@
-"use client"
+﻿"use client"
 
 import type React from "react"
 
 import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -37,12 +37,15 @@ import {
   Calendar,
   ShoppingBag,
   ShieldCheck,
+  Bell,
+  ArrowRightLeft,
 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { createClient } from "@/lib/supabase/client"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
 import { useToast } from "@/hooks/use-toast"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Circle {
   name: string
@@ -62,6 +65,8 @@ interface AllUser {
 }
 
 export default function AdminDashboard() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth();
+
   const [isLoading, setIsLoading] = useState(true)
   const [newStudentName, setNewStudentName] = useState("")
   const [newStudentIdNumber, setNewStudentIdNumber] = useState("")
@@ -70,6 +75,10 @@ export default function AdminDashboard() {
   const [selectedCircleToAdd, setSelectedCircleToAdd] = useState("")
   const [isAddStudentDialogOpen, setIsAddStudentDialogOpen] = useState(false)
   const [isRemoveStudentDialogOpen, setIsRemoveStudentDialogOpen] = useState(false)
+  const [isMoveStudentDialogOpen, setIsMoveStudentDialogOpen] = useState(false)
+  const [moveSourceCircle, setMoveSourceCircle] = useState("")
+  const [moveStudentId, setMoveStudentId] = useState("")
+  const [moveTargetCircle, setMoveTargetCircle] = useState("")
   const [selectedCircleToRemove, setSelectedCircleToRemove] = useState("")
   const [selectedStudentToRemove, setSelectedStudentToRemove] = useState("")
   const [totalStudents, setTotalStudents] = useState(0)
@@ -117,7 +126,15 @@ export default function AdminDashboard() {
 
   const [isReportsDialogOpen, setIsReportsDialogOpen] = useState(false)
 
+  const [isBulkAddStudentDialogOpen, setIsBulkAddStudentDialogOpen] = useState(false)
+  const [bulkCircle, setBulkCircle] = useState("")
+  type BulkRow = { name: string; account: string }
+  const emptyRows = (): BulkRow[] => Array.from({ length: 10 }, () => ({ name: "", account: "" }))
+  const [bulkRows, setBulkRows] = useState<BulkRow[]>(emptyRows())
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false)
+
   const availableStudentsToRemove = selectedCircleToRemove ? studentsInCircles[selectedCircleToRemove.trim()] || [] : []
+  const availableStudentsToMove = moveSourceCircle ? studentsInCircles[moveSourceCircle.trim()] || [] : []
 
   const [isDragging, setIsDragging] = useState(false)
   const [isAchievementDragging, setIsAchievementDragging] = useState(false)
@@ -147,6 +164,8 @@ export default function AdminDashboard() {
   const [uploadingFile, setUploadingFile] = useState(false)
   const [uploadingAchievementImage, setUploadingAchievementImage] = useState(false)
   const [isGamesManagementDialogOpen, setIsGamesManagementDialogOpen] = useState(false)
+  const [userPermissions, setUserPermissions] = useState<string[]>([])
+  const [isFullAccess, setIsFullAccess] = useState(false)
 
   const translateStatus = (status: string) => {
     const statusMap: Record<string, string> = {
@@ -175,18 +194,75 @@ export default function AdminDashboard() {
   const alertDialog = useAlertDialog()
   const { toast } = useToast()
 
+  const searchParams = useSearchParams()
+
+  useEffect(() => {
+    const action = searchParams?.get("action")
+    if (action) {
+      if (action === "add-student") setIsAddStudentDialogOpen(true)
+      if (action === "bulk-add") { setBulkCircle(""); setBulkRows(emptyRows()); setIsBulkAddStudentDialogOpen(true) }
+      if (action === "remove-student") setIsRemoveStudentDialogOpen(true)
+      if (action === "transfer-student") setIsMoveStudentDialogOpen(true)
+      if (action === "edit-student") setIsEditStudentDialogOpen(true)
+      if (action === "edit-points") setIsEditPointsDialogOpen(true)
+      if (action === "student-records") setIsStudentRecordsDialogOpen(true)
+    }
+  }, [searchParams])
+
+  const canAccess = (action: string) => {
+    if (isFullAccess) return true
+    return userPermissions.includes(action)
+  }
+
   useEffect(() => {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-    const userRole = localStorage.getItem("userRole")
-    if (!loggedIn || userRole !== "admin") {
+    const accountNumber = localStorage.getItem("accountNumber")
+    if (!loggedIn || !accountNumber) {
       router.push("/login")
-    } else {
-      const loadData = async () => {
-        await Promise.all([fetchCircles(), fetchStudents(), fetchTeachers(), fetchAdmins()])
-        setIsLoading(false)
-      }
-      loadData()
+      return
     }
+
+    const loadData = async () => {
+      try {
+        // جلب الـ role الحقيقي من قاعدة البيانات مباشرة
+        const supabase = createClient()
+        const { data: userData } = await supabase
+          .from("users")
+          .select("role")
+          .eq("account_number", Number(accountNumber))
+          .single()
+
+        const freshRole = userData?.role || localStorage.getItem("userRole") || ""
+        const adminRoles = ["admin", "مدير", "سكرتير", "مشرف تعليمي", "مشرف تربوي", "مشرف برامج"]
+
+        if (freshRole === "student" || freshRole === "teacher" || !freshRole) {
+          router.push("/login")
+          return
+        }
+
+        // تحديث localStorage بالـ role الجديد فوراً
+        localStorage.setItem("userRole", freshRole)
+
+        const fullAccess = ["admin", "مدير"].includes(freshRole) || Number(accountNumber) === 2
+        setIsFullAccess(fullAccess)
+
+        await Promise.all([fetchCircles(), fetchStudents(), fetchTeachers(), fetchAdmins()])
+
+        if (!fullAccess) {
+          try {
+            const res = await fetch("/api/roles")
+            const data = await res.json()
+            const perms: Record<string, string[]> = data.permissions || {}
+            setUserPermissions(perms[freshRole] || [])
+          } catch {}
+        }
+      } catch {
+        router.push("/login")
+        return
+      }
+      setIsLoading(false)
+    }
+    loadData()
   }, [router])
 
   const fetchTeachers = async () => {
@@ -326,14 +402,14 @@ export default function AdminDashboard() {
           const userData: AllUser = {
             id: user.id,
             name: user.name,
-            role: user.role === "teacher" ? "معلم" : user.role === "admin" ? "إداري" : user.role,
+            role: user.role === "teacher" ? "معلم" : (user.role !== "student" && user.role !== "teacher") ? "إداري" : user.role,
             account_number: user.account_number,
             phone_number: user.phone_number,
             id_number: user.id_number,
             halaqah: user.halaqah,
           }
 
-          if (user.role === "admin") {
+          if (user.role !== "student" && user.role !== "teacher") {
             admins.push(userData)
           } else if (user.role === "teacher") {
             teachers.push(userData)
@@ -359,6 +435,46 @@ export default function AdminDashboard() {
   const handleOpenAllUsersDialog = () => {
     setIsAllUsersDialogOpen(true)
     fetchAllUsers()
+  }
+
+  const handleBulkAddStudents = async () => {
+    const validRows = bulkRows.filter(r => r.name.trim() && r.account.trim())
+    if (!bulkCircle || validRows.length === 0) {
+      toast({ title: "تنبيه", description: "يرجى اختيار الحلقة وإدخال بيانات طالب واحد على الأقل", variant: "destructive" })
+      return
+    }
+    setIsBulkSubmitting(true)
+    let successCount = 0
+    let failCount = 0
+    for (const row of validRows) {
+      try {
+        const res = await fetch("/api/students", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: row.name.trim(),
+            circle_name: bulkCircle,
+            id_number: "0",
+            guardian_phone: "0",
+            account_number: parseInt(row.account),
+            initial_points: 0,
+          }),
+        })
+        if (res.ok) successCount++
+        else failCount++
+      } catch { failCount++ }
+    }
+    setIsBulkSubmitting(false)
+    toast({
+      title: successCount > 0 ? `✓ تم إضافة ${successCount} طالب` : "فشل الحفظ",
+      description: failCount > 0 ? `فشل ${failCount} طالب` : undefined,
+    })
+    if (successCount > 0) {
+      setIsBulkAddStudentDialogOpen(false)
+      setBulkCircle("")
+      setBulkRows(emptyRows())
+      fetchStudents()
+    }
   }
 
   const handleAddStudent = async () => {
@@ -620,6 +736,50 @@ export default function AdminDashboard() {
     }
   }
 
+  const handleMoveStudent = async () => {
+    if (moveStudentId && moveTargetCircle) {
+      setIsSubmitting(true)
+      try {
+        const response = await fetch(`/api/students?id=${moveStudentId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ halaqah: moveTargetCircle }),
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+          const studentName = availableStudentsToMove.find((s) => s.id === moveStudentId)?.name
+          toast({
+            title: "✓ تم النقل بنجاح",
+            description: `تم نقل الطالب ${studentName} إلى ${moveTargetCircle} بنجاح`,
+            className: "bg-gradient-to-r from-[#D4AF37] to-[#C9A961] text-white border-none",
+          })
+          setMoveStudentId("")
+          setMoveSourceCircle("")
+          setMoveTargetCircle("")
+          setIsMoveStudentDialogOpen(false)
+          fetchStudents()
+        } else {
+          toast({
+            title: "حدث خطأ",
+            description: data.error || "فشل في نقل الطالب",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        console.error("Error moving student:", error)
+        toast({
+          title: "حدث خطأ",
+          description: "فشل في الاتصال بالخادم",
+          variant: "destructive",
+        })
+      } finally {
+        setIsSubmitting(false)
+      }
+    }
+  }
+
   const handleRemoveStudent = async () => {
     if (selectedStudentToRemove) {
       setIsSubmitting(true)
@@ -866,6 +1026,7 @@ export default function AdminDashboard() {
                 <h2 className="text-lg font-bold text-[#1a2332]">إدارة المستخدمين</h2>
               </div>
               <div className="divide-y divide-[#D4AF37]/25">
+                {canAccess("إدارة الطلاب") && (
                 <Dialog open={isStudentManagementDialogOpen} onOpenChange={setIsStudentManagementDialogOpen}>
                   <DialogTrigger asChild>
                     <button
@@ -887,7 +1048,9 @@ export default function AdminDashboard() {
                     <div className="divide-y divide-[#D4AF37]/25 rounded-xl border border-[#D4AF37]/40 overflow-hidden mt-4">
                       {[
                         { icon: UserPlus, label: "إضافة طالب", action: () => { setIsStudentManagementDialogOpen(false); setIsAddStudentDialogOpen(true) } },
+                        { icon: Users, label: "إضافة جماعية", action: () => { setIsStudentManagementDialogOpen(false); setBulkCircle(""); setBulkRows(emptyRows()); setIsBulkAddStudentDialogOpen(true) } },
                         { icon: UserMinus, label: "إزالة طالب", action: () => { setIsStudentManagementDialogOpen(false); setIsRemoveStudentDialogOpen(true) } },
+                        { icon: ArrowRightLeft, label: "نقل طالب", action: () => { setIsStudentManagementDialogOpen(false); setMoveSourceCircle(""); setMoveStudentId(""); setMoveTargetCircle(""); setIsMoveStudentDialogOpen(true) } },
                         { icon: Settings, label: "تعديل بيانات الطالب", action: () => { setIsStudentManagementDialogOpen(false); handleOpenEditDialog() } },
                         { icon: Edit2, label: "تعديل نقاط الطالب", action: () => { setIsStudentManagementDialogOpen(false); setSelectedCircleForPoints(""); setSelectedStudentForPoints(""); setEditingStudentPoints(null); setNewPoints(""); setIsEditPointsDialogOpen(true) } },
                         { icon: FileText, label: "سجلات الطلاب", action: handleOpenRecordsDialog },
@@ -907,12 +1070,15 @@ export default function AdminDashboard() {
                     </div>
                   </DialogContent>
                 </Dialog>
+                )}
 
                 {[
                   { icon: Settings, label: "إدارة المعلمين", action: () => router.push("/admin/teachers") },
                   { icon: BookOpen, label: "إدارة الحلقات", action: () => router.push("/admin/circles") },
-                  { icon: ShieldCheck, label: "إدارة الإداريين", action: () => router.push("/admin/admins") },
-                ].map(({ icon: Ic, label, action }) => (
+                  { icon: ShieldCheck, label: "الهيكل الإداري", action: () => router.push("/admin/admins") },
+                  { icon: Zap, label: "الصلاحيات", action: () => router.push("/admin/permissions") },
+                  { icon: UserPlus, label: "طلبات الإلتحاق", action: () => router.push("/admin/enrollment-requests") },
+                ].filter(({ label }) => canAccess(label)).map(({ icon: Ic, label, action }) => (
                   <button key={label} onClick={action} className="w-full flex items-center justify-between px-6 py-5 hover:bg-[#D4AF37]/5 transition-colors duration-200 group border-t border-[#D4AF37]/10">
                     <div className="flex items-center gap-3">
                       <Ic className="w-5 h-5 text-[#C9A961] group-hover:text-[#D4AF37] transition-colors" />
@@ -933,6 +1099,7 @@ export default function AdminDashboard() {
                 <h2 className="text-lg font-bold text-[#1a2332]">الإدارة العامة</h2>
               </div>
               <div className="divide-y divide-[#D4AF37]/25">
+                {canAccess("التقارير") && (
                 <Dialog open={isReportsDialogOpen} onOpenChange={setIsReportsDialogOpen}>
                   <DialogTrigger asChild>
                     <button onClick={(e) => { e.preventDefault(); setIsReportsDialogOpen(true) }} className="w-full flex items-center justify-between px-6 py-5 hover:bg-[#D4AF37]/5 transition-colors duration-200 group">
@@ -968,11 +1135,13 @@ export default function AdminDashboard() {
                     </div>
                   </DialogContent>
                 </Dialog>
+                )}
 
                 {[
                   { icon: MessageSquare, label: "الإرسال إلى أولياء الأمور", path: "/admin/whatsapp-send" },
+                  { icon: Bell, label: "الإشعارات", path: "/admin/notifications" },
                   { icon: Map, label: "إدارة المسار", path: "/admin/pathways" },
-                ].map(({ icon: Ic, label, path }) => (
+                ].filter(({ label }) => canAccess(label)).map(({ icon: Ic, label, path }) => (
                   <button key={label} onClick={() => router.push(path)} className="w-full flex items-center justify-between px-6 py-5 hover:bg-[#D4AF37]/5 transition-colors duration-200 group">
                     <div className="flex items-center gap-3">
                       <Ic className="w-5 h-5 text-[#C9A961] group-hover:text-[#D4AF37] transition-colors" />
@@ -982,6 +1151,7 @@ export default function AdminDashboard() {
                   </button>
                 ))}
 
+                {canAccess("إدارة الألعاب") && (
                 <Dialog open={isGamesManagementDialogOpen} onOpenChange={setIsGamesManagementDialogOpen}>
                   <DialogTrigger asChild>
                     <button onClick={(e) => { e.preventDefault(); setIsGamesManagementDialogOpen(true) }} className="w-full flex items-center justify-between px-6 py-5 hover:bg-[#D4AF37]/5 transition-colors duration-200 group">
@@ -1015,10 +1185,11 @@ export default function AdminDashboard() {
                     </div>
                   </DialogContent>
                 </Dialog>
+                )}
 
                 {[
                   { icon: ShoppingBag, label: "إدارة المتجر", path: "/admin/store-management" },
-                ].map(({ icon: Ic, label, path }) => (
+                ].filter(({ label }) => canAccess(label)).map(({ icon: Ic, label, path }) => (
                   <button key={label} onClick={() => router.push(path)} className="w-full flex items-center justify-between px-6 py-5 hover:bg-[#D4AF37]/5 transition-colors duration-200 group">
                     <div className="flex items-center gap-3">
                       <Ic className="w-5 h-5 text-[#C9A961] group-hover:text-[#D4AF37] transition-colors" />
@@ -1124,6 +1295,81 @@ export default function AdminDashboard() {
                 </div>
               </DialogContent>
             </Dialog>
+
+          <Dialog open={isBulkAddStudentDialogOpen} onOpenChange={(open) => { setIsBulkAddStudentDialogOpen(open); if (!open) { setBulkCircle(""); setBulkRows(emptyRows()) } }}>
+            <DialogContent className="sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-xl text-[#1a2332]">إضافة جماعية للطلاب</DialogTitle>
+                <DialogDescription className="text-sm text-neutral-500">اختر الحلقة ثم أدخل بيانات الطلاب</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                {/* اختيار الحلقة */}
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-neutral-600">اسم الحلقة</Label>
+                  <Select value={bulkCircle} onValueChange={setBulkCircle}>
+                    <SelectTrigger className="w-full text-sm">
+                      <SelectValue placeholder="اختر الحلقة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {circles.map((circle) => (
+                        <SelectItem key={circle.name} value={circle.name}>{circle.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* صف العناوين */}
+                <div className="grid grid-cols-2 gap-2 mb-1">
+                  <span className="text-xs font-bold text-neutral-500 text-right pr-1">اسم الطالب</span>
+                  <span className="text-xs font-bold text-neutral-500 text-right pr-1">رقم الحساب</span>
+                </div>
+
+                {/* صفوف الطلاب */}
+                <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                  {bulkRows.map((row, idx) => (
+                    <div key={idx} className="grid grid-cols-2 gap-2 items-center">
+                      <Input
+                        placeholder={`اسم الطالب ${idx + 1}`}
+                        value={row.name}
+                        onChange={e => setBulkRows(prev => prev.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
+                        className="text-sm h-9"
+                        dir="rtl"
+                      />
+                      <Input
+                        placeholder="رقم الحساب"
+                        value={row.account}
+                        onChange={e => setBulkRows(prev => prev.map((r, i) => i === idx ? { ...r, account: e.target.value } : r))}
+                        className="text-sm h-9"
+                        dir="ltr"
+                        type="number"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* زر إضافة صف */}
+                <button
+                  type="button"
+                  onClick={() => setBulkRows(prev => [...prev, { name: "", account: "" }])}
+                  className="flex items-center gap-1.5 text-sm text-[#C9A961] hover:text-[#D4AF37] font-medium transition-colors"
+                >
+                  <span className="w-5 h-5 rounded-full border-2 border-current flex items-center justify-center text-base leading-none">+</span>
+                  إضافة سطر
+                </button>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" onClick={() => setIsBulkAddStudentDialogOpen(false)} className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600">إلغاء</Button>
+                <Button
+                  onClick={handleBulkAddStudents}
+                  disabled={!bulkCircle || bulkRows.every(r => !r.name.trim() || !r.account.trim()) || isBulkSubmitting}
+                  className="border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm h-9 rounded-lg font-medium"
+                >
+                  {isBulkSubmitting ? "جاري الحفظ..." : "حفظ الجميع"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
           <Dialog open={isAddStudentDialogOpen} onOpenChange={setIsAddStudentDialogOpen}>
             <DialogContent className="sm:max-w-[425px]">
@@ -1289,6 +1535,97 @@ export default function AdminDashboard() {
                   disabled={!selectedStudentToRemove || !selectedCircleToRemove || isSubmitting}
                 >
                   {isSubmitting ? "جاري الإزالة..." : "إزالة"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          <Dialog open={isMoveStudentDialogOpen} onOpenChange={setIsMoveStudentDialogOpen}>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle className="text-xl text-[#1a2332]">نقل طالب</DialogTitle>
+                <DialogDescription className="text-sm text-neutral-500">اختر الحلقة الحالية، ثم الطالب، ثم الحلقة المراد نقله إليها</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="space-y-2">
+                  <Label className="text-sm font-medium text-neutral-600">
+                    الحلقة الحالية
+                  </Label>
+                  <Select
+                    value={moveSourceCircle}
+                    onValueChange={(value) => {
+                      setMoveSourceCircle(value)
+                      setMoveStudentId("")
+                    }}
+                  >
+                    <SelectTrigger className="w-full text-sm">
+                      <SelectValue placeholder="اختر الحلقة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {circles.map((circle) => (
+                        <SelectItem key={circle.name} value={circle.name}>
+                          {circle.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-[#1a2332]">
+                    اختر الطالب
+                  </Label>
+                  <Select
+                    value={moveStudentId}
+                    onValueChange={setMoveStudentId}
+                    disabled={!moveSourceCircle}
+                  >
+                    <SelectTrigger className="w-full text-sm">
+                      <SelectValue placeholder={moveSourceCircle ? "اختر الطالب" : "اختر الحلقة أولاً"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableStudentsToMove.map((student: any) => (
+                        <SelectItem key={student.id} value={student.id}>
+                          {student.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-[#1a2332]">
+                    الحلقة المراد النقل إليها
+                  </Label>
+                  <Select
+                    value={moveTargetCircle}
+                    onValueChange={setMoveTargetCircle}
+                    disabled={!moveStudentId}
+                  >
+                    <SelectTrigger className="w-full text-sm">
+                      <SelectValue placeholder={moveStudentId ? "اختر الحلقة الجديدة" : "اختر الطالب أولاً"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {circles.map((circle) => (
+                        <SelectItem key={'t_'+circle.name} value={circle.name}>
+                          {circle.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => { setIsMoveStudentDialogOpen(false); setMoveSourceCircle(""); setMoveStudentId(""); setMoveTargetCircle("") }}
+                  className="text-sm h-9 rounded-lg border-[#D4AF37]/50 text-neutral-600"
+                >
+                  إلغاء
+                </Button>
+                <Button
+                  onClick={handleMoveStudent}
+                  className="bg-[#D4AF37] hover:bg-[#C9A961] text-white text-sm h-9 rounded-lg font-medium"
+                  disabled={!moveStudentId || !moveTargetCircle || isSubmitting}
+                >
+                  {isSubmitting ? "جاري النقل..." : "حفظ"}
                 </Button>
               </div>
             </DialogContent>
@@ -1478,7 +1815,9 @@ export default function AdminDashboard() {
                               ? record.evaluations[record.evaluations.length - 1]
                               : null;
                             console.log('[DEBUG][Dashboard] آخر تقييم:', lastEval);
-                            return (
+                              if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
+
+  return (
                               <TableRow key={record.id}>
                                 <TableCell className="font-medium">
                                   {new Date(record.date).toLocaleDateString("ar-SA")}

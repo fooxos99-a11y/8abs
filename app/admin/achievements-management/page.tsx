@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
@@ -6,8 +6,11 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Award, Upload } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 export default function AchievementsManagementPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الطلاب");
+
   const [title, setTitle] = useState("")
   const [date, setDate] = useState("")
   const [description, setDescription] = useState("")
@@ -63,6 +66,8 @@ export default function AchievementsManagementPage() {
     }
     setIsSubmitting(false)
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="max-w-2xl mx-auto p-6">

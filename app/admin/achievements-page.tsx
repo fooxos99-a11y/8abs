@@ -3,8 +3,10 @@
 
 import { useState, useEffect } from "react"
 import { Award, Upload, FileText } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 export default function AdminAchievementsPage() {
+  useAdminAuth();
   const [achievements, setAchievements] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
   useEffect(() => {

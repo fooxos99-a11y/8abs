@@ -4,7 +4,7 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/components/ui/tooltip"
-import { Award, Calendar, Star } from "lucide-react"
+import { Award, Calendar, Star, MonitorPlay, X} from "lucide-react"
 import { useEffect, useState } from "react"
 
 interface Student {
@@ -93,7 +93,7 @@ const isForestTheme = (theme?: string) => theme === "forest"
 const ForestLeaves = () => (
   <>
     {/* ورقة شجر علوية يسار */}
-    <div className="absolute -top-2 -left-2 w-12 h-12 opacity-30 pointer-events-none">
+    <div className="absolute -top-2 -left-2 w-8 h-8 opacity-30 pointer-events-none">
       <svg viewBox="0 0 24 24" fill="#22C55E">
         <path d="M17,8C8,10 5.9,16.17 3.82,21.34L5.71,22L6.66,19.7C7.14,19.87 7.64,20 8,20C19,20 22,3 22,3C21,5 14,5.25 9,6.25C4,7.25 2,11.5 2,13.5C2,15.5 3.75,17.25 3.75,17.25C7,8 17,8 17,8Z" />
       </svg>
@@ -148,6 +148,30 @@ const ForestLeaves = () => (
 export default function MusabHalaqahPage() {
   const [topStudents, setTopStudents] = useState<Student[]>([])
   const [loading, setLoading] = useState(true)
+  const [isAutoScrolling, setIsAutoScrolling] = useState(false)
+
+    useEffect(() => {
+    if (!isAutoScrolling) return;
+    let animationFrameId: number;
+    let scrollDirection = 1; let currentY = window.scrollY;
+
+    const scrollStep = () => {
+      const { scrollTop, scrollHeight, clientHeight } = document.documentElement;
+      
+      // Reverse direction at top or bottom
+      if (scrollTop + clientHeight >= scrollHeight - 2) {
+        scrollDirection = -1;
+      } else if (scrollTop <= 0) {
+        scrollDirection = 1;
+      }
+      
+      currentY += scrollDirection * 0.3; window.scrollTo(0, currentY);
+      animationFrameId = requestAnimationFrame(scrollStep);
+    };
+
+    animationFrameId = requestAnimationFrame(scrollStep);
+    return () => cancelAnimationFrame(animationFrameId);
+  }, [isAutoScrolling]);
 
   useEffect(() => {
     const fetchStudents = async () => {
@@ -191,7 +215,7 @@ export default function MusabHalaqahPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-white">
-        <Header />
+        {!isAutoScrolling && <Header />}
         <main className="flex-1 flex items-center justify-center">
           <div className="text-2xl text-[#023232]">جاري التحميل...</div>
         </main>
@@ -203,7 +227,7 @@ export default function MusabHalaqahPage() {
   if (topStudents.length === 0) {
     return (
       <div className="min-h-screen flex flex-col bg-white">
-        <Header />
+        {!isAutoScrolling && <Header />}
         <main className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <h1 className="text-4xl font-bold text-[#023232] mb-4">حلقة مصعب بن عمير</h1>
@@ -217,7 +241,7 @@ export default function MusabHalaqahPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-white">
-      <Header />
+      {!isAutoScrolling && <Header />}
 
       <main className="flex-1 py-16">
         <div className="container mx-auto px-4">
@@ -246,8 +270,6 @@ export default function MusabHalaqahPage() {
               />
               <div className="h-px w-16 sm:w-24 bg-gradient-to-l from-transparent to-[#d8a355]" />
             </div>
-
-            <p className="text-lg text-gray-600 mt-6 font-medium">أفضل طلاب الحلقة</p>
           </div>
 
           <TooltipProvider>
@@ -411,7 +433,19 @@ export default function MusabHalaqahPage() {
         </div>
       </main>
 
-      <Footer />
+            <button
+        onClick={() => setIsAutoScrolling(!isAutoScrolling)}
+        className={`fixed bottom-6 left-6 w-8 h-8 rounded-full shadow-2xl transition-all duration-300 z-50 flex items-center justify-center ${
+          isAutoScrolling 
+            ? "bg-red-500 hover:bg-red-600 text-white" 
+            : "bg-[#d8a355] hover:bg-[#c99347] text-white opacity-50 hover:opacity-100"
+        }`}
+        title={isAutoScrolling ? "إيقاف العرض" : "شاشة عرض"}
+      >
+        {isAutoScrolling ? <X size={16} /> : <MonitorPlay size={16} />}
+      </button>
+
+      {!isAutoScrolling && <Footer />}
     </div>
   )
 }

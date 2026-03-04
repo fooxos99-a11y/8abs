@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Plus, Edit, Trash2 } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 type Category = {
   id: string
@@ -36,6 +37,8 @@ type Question = {
 }
 
 export default function AuctionQuestionsAdmin() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الألعاب");
+
   const [questions, setQuestions] = useState<Question[]>([])
   const [categories, setCategories] = useState<Category[]>([])
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>("all")
@@ -175,6 +178,8 @@ export default function AuctionQuestionsAdmin() {
       console.error("Error deleting category:", error)
     }
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <>

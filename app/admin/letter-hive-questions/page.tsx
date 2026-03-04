@@ -1,13 +1,16 @@
-"use client";
+﻿"use client";
 import { createClient } from "@/lib/supabase/client";
 import { useEffect, useState } from "react";
 import { Plus, Trash2, BookOpen, LayoutGrid } from "lucide-react"; // تأكد من تثبيت lucide-react
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 const ARABIC_LETTERS = [
   "أ","ب","ت","ث","ج","ح","خ","د","ذ","ر","ز","س","ش","ص","ض","ط","ظ","ع","غ","ف","ق","ك","ل","م","ن","هـ","و","ي"
 ];
 
 export default function LetterHiveQuestionsAdmin() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الألعاب");
+
   const [questions, setQuestions] = useState<Record<string, {question: string, answer: string}[]>>({});
   const [loading, setLoading] = useState(true);
   const [selectedLetter, setSelectedLetter] = useState<string | null>(null);
@@ -53,6 +56,8 @@ export default function LetterHiveQuestionsAdmin() {
     await supabase.from("letter_hive_questions").delete().eq("letter", letter).eq("question", question);
     fetchQuestions();
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div dir="rtl" className="min-h-screen bg-[#faf9f6] text-[#3d3d3d] p-4 md:p-8 font-sans">

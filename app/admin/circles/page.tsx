@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -19,6 +19,7 @@ import { Plus, Trash2, ArrowRight, Users, BookOpen, Eye, UserX, Info } from "luc
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
 import { TeacherAttendanceModal } from "@/components/teacher-attendance-modal"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Circle {
   name: string
@@ -36,6 +37,8 @@ interface Student {
 }
 
 export default function CircleManagement() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الحلقات");
+
   const [isLoading, setIsLoading] = useState(true)
   const [newCircleName, setNewCircleName] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
@@ -181,6 +184,8 @@ export default function CircleManagement() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-[#fafaf9]" dir="rtl">

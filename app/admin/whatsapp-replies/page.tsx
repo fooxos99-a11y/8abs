@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { MessageCircle, Search, Phone, Clock, CheckCheck } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Reply {
   id: string
@@ -21,6 +22,8 @@ interface Reply {
 }
 
 export default function WhatsAppRepliesPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("الإرسال إلى أولياء الأمور");
+
   const [isLoading, setIsLoading] = useState(true)
   const [replies, setReplies] = useState<Reply[]>([])
   const [filteredReplies, setFilteredReplies] = useState<Reply[]>([])
@@ -33,7 +36,7 @@ export default function WhatsAppRepliesPage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
 
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       fetchData()
@@ -141,6 +144,8 @@ export default function WhatsAppRepliesPage() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#faf8f5] to-white">

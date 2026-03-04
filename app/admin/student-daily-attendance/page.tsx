@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Calendar } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 function translateLevel(level: string | null | undefined) {
   if (!level) return null;
@@ -60,6 +61,8 @@ interface AttendanceRecord {
 }
 
 export default function StudentDailyAttendancePage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("التقارير");
+
   const [isLoading, setIsLoading] = useState(true)
   const [attendanceRecords, setAttendanceRecords] = useState<AttendanceRecord[]>([])
   const [filteredRecords, setFilteredRecords] = useState<AttendanceRecord[]>([])
@@ -129,6 +132,8 @@ export default function StudentDailyAttendancePage() {
     const order: Record<string, number> = { absent: 0, excused: 1, present: 2 };
     return (order[a.status ?? ""] ?? 3) - (order[b.status ?? ""] ?? 3);
   });
+
+  if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#f5f1e8] to-white">

@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 import {
   Lock,
@@ -76,6 +77,8 @@ const supabase = createBrowserClient(
 )
 
 export default function AdminPathwaysPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة المسار");
+
     // نافذة تعديل النقاط
     const [showPointsModal, setShowPointsModal] = useState(false);
     const [pointsEditValue, setPointsEditValue] = useState<number>(0);
@@ -84,6 +87,8 @@ export default function AdminPathwaysPage() {
 
   const [levels, setLevels] = useState<Level[]>([])
   const [selectedLevel, setSelectedLevel] = useState<number>(1)
+  const [selectedHalaqah, setSelectedHalaqah] = useState<string>("")
+  const [circles, setCircles] = useState<{ id: string; name: string }[]>([]);
 
   const [contents, setContents] = useState<Record<number, LevelContent[]>>({})
   const [quizzes, setQuizzes] = useState<Record<number, Quiz[]>>({})
@@ -114,6 +119,9 @@ export default function AdminPathwaysPage() {
   const [correctAnswer, setCorrectAnswer] = useState(0)
 
   /* ------------------------------ Edit Level Modal ----------------------------- */
+  const [showResultsModal, setShowResultsModal] = useState(false)
+  const [levelResults, setLevelResults] = useState<any[]>([])
+  const [isLoadingResults, setIsLoadingResults] = useState(false)
   const [editTitle, setEditTitle] = useState("")
   const [editDescription, setEditDescription] = useState("")
 
@@ -124,43 +132,87 @@ export default function AdminPathwaysPage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const role = localStorage.getItem("userRole")
 
-    if (!loggedIn || role !== "admin") {
+    if (!loggedIn || !role || role === "student" || role === "teacher") {
       router.push("/login")
       return
     }
 
     loadLevels()
+    fetchCircles()
   }, [])
 
   useEffect(() => {
-    loadContents()
-    loadQuizzes()
-  }, [selectedLevel])
+    if (selectedHalaqah) {
+      loadLevels()
+      setSelectedLevel(1)
+    }
+  }, [selectedHalaqah])
+
+  useEffect(() => {
+    if (selectedLevel && selectedHalaqah) {
+      loadContents()
+      loadQuizzes()
+    }
+  }, [selectedLevel, selectedHalaqah])
 
   /* -------------------------------------------------------------------------- */
   /*                                   LOADERS                                  */
   /* -------------------------------------------------------------------------- */
 
+  async function fetchCircles() {
+    try {
+      const res = await fetch('/api/circles');
+      const data = await res.json();
+      if (data.circles) {
+        setCircles(data.circles);
+        if (data.circles.length > 0) {
+          setSelectedHalaqah(data.circles[0].name);
+        }
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
   async function loadLevels() {
+    if (!selectedHalaqah) return;
     const { data, error } = await supabase
-      .from("pathway_levels")
-      .select("*")
-      .order("level_number")
+      .from("pathway_levels").select("*").eq("halaqah", selectedHalaqah).order("level_number")
 
     if (!error && data) setLevels(data as Level[])
   }
 
   async function loadContents() {
-    const res = await fetch(`/api/pathway-contents?level_id=${selectedLevel}`)
+    const res = await fetch(`/api/pathway-contents?level_id=${selectedLevel}&halaqah=${encodeURIComponent(selectedHalaqah)}`)
     const json = await res.json()
     setContents((p) => ({ ...p, [selectedLevel]: json.contents || [] }))
   }
 
+  async function loadLevelResults() {
+    if (!selectedLevel || !selectedHalaqah) return;
+    setIsLoadingResults(true);
+    const { data, error } = await supabase
+      .from("pathway_level_completions")
+      .select("id, student_id, points, level_number, students!inner(name, halaqah)")
+      .eq("level_number", selectedLevel)
+      .eq("students.halaqah", selectedHalaqah);
+    
+    if (!error && data) {
+      setLevelResults(data.map((r: any) => ({
+        id: r.id,
+        student_id: r.student_id,
+        points: r.points,
+        student_name: r.students?.name || "-",
+      })));
+    } else {
+      setLevelResults([]);
+    }
+    setIsLoadingResults(false);
+  }
+
   async function loadQuizzes() {
     const { data } = await supabase
-      .from("pathway_level_questions")
-      .select("*")
-      .eq("level_number", selectedLevel)
+      .from("pathway_level_questions").select("*").eq("level_number", selectedLevel).eq("halaqah", selectedHalaqah)
       .order("id")
 
     if (data) {
@@ -213,6 +265,7 @@ export default function AdminPathwaysPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         level_id: selectedLevel,
+        halaqah: selectedHalaqah,
         content_title: contentTitle,
         content_description: contentDescription,
         content_url: finalUrl,
@@ -238,8 +291,7 @@ export default function AdminPathwaysPage() {
     if (!quizQuestion || quizOptions.some((o) => !o)) return
 
     await supabase.from("pathway_level_questions").insert({
-      level_number: selectedLevel,
-      question: quizQuestion,
+      level_number: selectedLevel, halaqah: selectedHalaqah, question: quizQuestion,
       options: quizOptions,
       correct_answer: correctAnswer,
     })
@@ -260,8 +312,7 @@ export default function AdminPathwaysPage() {
     // احسب رقم المستوى الجديد
     const nextNumber = (levels[levels.length - 1]?.level_number || 0) + 1;
     const { data, error } = await supabase.from('pathway_levels').insert({
-      level_number: nextNumber,
-      title: `المستوى ${nextNumber}`,
+      level_number: nextNumber, halaqah: selectedHalaqah, title: `المستوى ${nextNumber}`,
       description: '',
       points: 100,
       is_locked: false,
@@ -283,13 +334,14 @@ export default function AdminPathwaysPage() {
     // احصل على رقم آخر مستوى
     const maxLevel = Math.max(...levels.map(l => l.level_number));
     // حذف بدون تأكيد
-    const { error } = await supabase.from('pathway_levels').delete().eq('level_number', maxLevel);
+    const { error } = await supabase.from('pathway_levels').delete().eq('level_number', maxLevel).eq("halaqah", selectedHalaqah);
     if (!error) {
       showNotification('تم حذف آخر مستوى بنجاح');
       // جلب المستويات من القاعدة مباشرة بعد الحذف
       const { data: newLevels, error: fetchError } = await supabase
         .from('pathway_levels')
         .select('*')
+        .eq('halaqah', selectedHalaqah)
         .order('level_number');
       if (!fetchError && newLevels) {
         setLevels(newLevels);
@@ -309,7 +361,7 @@ export default function AdminPathwaysPage() {
 
   async function handleToggleLockLevel() {
     if (!level) return;
-    const { error } = await supabase.from('pathway_levels').update({ is_locked: !level.is_locked }).eq('level_number', selectedLevel);
+    const { error } = await supabase.from('pathway_levels').update({ is_locked: !level.is_locked }).eq('level_number', selectedLevel).eq("halaqah", selectedHalaqah);
     if (!error) {
       showNotification(level.is_locked ? 'تم فتح المستوى بنجاح' : 'تم قفل المستوى بنجاح');
       loadLevels();
@@ -326,6 +378,8 @@ export default function AdminPathwaysPage() {
 
   const icon = (t: string) =>
     t === "pdf" ? <FileText /> : t === "video" ? <Video /> : <LinkIcon />
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div dir="rtl" className="min-h-screen flex flex-col bg-[#fafaf9]">
@@ -344,6 +398,19 @@ export default function AdminPathwaysPage() {
         <div className="container mx-auto max-w-4xl space-y-8">
 
           {/* Page Header */}
+              <div className="mb-6 flex flex-col md:flex-row items-center gap-4">
+                <span className="font-bold text-[#1a2332]">اختر الحلقة:</span>
+                <Select value={selectedHalaqah} onValueChange={(val) => { setSelectedHalaqah(val); setSelectedLevel(1); }}>
+                  <SelectTrigger className="w-[250px] border-[#D4AF37]/40 bg-white">
+                    <SelectValue placeholder="اختر الحلقة" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {circles.map(c => (
+                      <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
           <div className="flex items-center justify-between border-b border-[#D4AF37]/40 pb-6">
             <div className="flex items-center gap-3">
               <button
@@ -358,7 +425,7 @@ export default function AdminPathwaysPage() {
               <h1 className="text-2xl font-bold text-[#1a2332]">إدارة المسار</h1>
             </div>
             <button
-              onClick={() => router.push("/admin/pathways-results")}
+              onClick={() => { loadLevelResults(); setShowResultsModal(true); }}
               className="flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors"
             >
               نتائج المسار
@@ -613,7 +680,57 @@ export default function AdminPathwaysPage() {
           </div>
         </div>
       )}
+
+      {/* Results Modal */}
+      {showResultsModal && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/30" dir="rtl">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-lg border border-[#D4AF37]/40 shadow-xl flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold text-[#1a2332]">
+                {selectedHalaqah === "all" ? "جميع الحلقات" : `حلقة ${selectedHalaqah}`}
+              </h2>
+            </div>
+
+            <div className="overflow-y-auto pr-2 space-y-3">
+              {isLoadingResults ? (
+                <div className="flex justify-center items-center py-10">
+                  <div className="w-8 h-8 rounded-full border-4 border-[#D4AF37]/20 border-t-[#D4AF37] animate-spin" />
+                </div>
+              ) : levelResults.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 text-center">
+                  <p className="text-lg font-bold text-[#1a2332]">لا يوجد طلاب حاليا</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {levelResults.map((r, i) => (
+                    <div key={i} className="flex justify-between items-center p-3 rounded-xl border border-[#D4AF37]/20 hover:bg-[#D4AF37]/3 transition-colors">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full bg-[#D4AF37]/10 flex items-center justify-center font-bold text-[#D4AF37] border border-[#D4AF37]/20">
+                          {i + 1}
+                        </div>
+                        <span className="font-medium text-[#1a2332]">{r.student_name}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/20">
+                        <span className="text-[#D4AF37] font-bold">{r.points}</span>
+                        <span className="text-xs text-[#C9A961] font-semibold">نقطة</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-neutral-100">
+              <button 
+                onClick={() => setShowResultsModal(false)}
+                className="px-4 py-2 rounded-lg border border-neutral-200 text-neutral-500 text-sm hover:bg-neutral-50 transition-colors"
+              >
+                إغلاق
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
-

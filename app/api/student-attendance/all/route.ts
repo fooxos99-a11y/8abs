@@ -7,7 +7,7 @@ export async function GET(request: Request) {
   // جلب جميع الطلاب
   const { data: students, error: studentsError } = await supabase
     .from("students")
-    .select("id, name, account_number")
+    .select("id, name, account_number, halaqah")
     .order("account_number", { ascending: true })
 
   if (studentsError) {
@@ -57,6 +57,7 @@ export async function GET(request: Request) {
         student_id: student.id,
         student_name: student.name,
         account_number: student.account_number,
+        halaqah: student.halaqah,
         attendance_date: rec.date,
         status: rec.status,
         created_at: rec.created_at,
@@ -72,6 +73,7 @@ export async function GET(request: Request) {
         student_id: student.id,
         student_name: student.name,
         account_number: student.account_number,
+        halaqah: student.halaqah,
         attendance_date: selectedDate,
         status: null,
         created_at: null,

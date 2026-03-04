@@ -174,7 +174,11 @@ export default function StorePage() {
             {categories.length === 0 ? (
               <div className="text-center text-gray-400 py-16">لا توجد فئات متاحة حالياً</div>
             ) : (
-              categories.map((category) => {
+              [...categories].sort((a, b) => {
+                if (a.name === "المظاهر") return 1;
+                if (b.name === "المظاهر") return -1;
+                return 0;
+              }).map((category) => {
                 const categoryProducts = products.filter((prod) => prod.category_id === category.id)
                 return (
                   <div key={category.id}>

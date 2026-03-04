@@ -10,7 +10,7 @@ function calculatePoints(level: string): number {
     case "good":
       return 6
     case "not_completed":
-      return 0
+      return 4
     default:
       return 0
   }

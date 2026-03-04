@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
@@ -12,6 +12,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Trash2, Edit, Plus, ChevronDown, ChevronUp } from "lucide-react"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 type Question = {
   id: string
@@ -28,6 +29,8 @@ type Category = {
 }
 
 export default function QuestionsDatabase() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الألعاب");
+
   const [categories, setCategories] = useState<Category[]>([])
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -223,6 +226,8 @@ export default function QuestionsDatabase() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#faf8f5] via-[#f5ead8] to-[#faf8f5] p-4 sm:p-8">

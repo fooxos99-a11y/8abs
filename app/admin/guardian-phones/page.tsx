@@ -1,4 +1,4 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { Phone, Save, Search, Users } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useAdminAuth } from "@/hooks/use-admin-auth"
 
 interface Student {
   id: string
@@ -21,6 +22,8 @@ interface Student {
 }
 
 export default function GuardianPhonesPage() {
+  const { isLoading: authLoading, isVerified: authVerified } = useAdminAuth("إدارة الطلاب");
+
   const [isLoading, setIsLoading] = useState(true)
   const [students, setStudents] = useState<Student[]>([])
   const [filteredStudents, setFilteredStudents] = useState<Student[]>([])
@@ -34,7 +37,7 @@ export default function GuardianPhonesPage() {
     const loggedIn = localStorage.getItem("isLoggedIn") === "true"
     const userRole = localStorage.getItem("userRole")
 
-    if (!loggedIn || userRole !== "admin") {
+    if (!loggedIn || !userRole || userRole === "student" || userRole === "teacher") {
       router.push("/login")
     } else {
       fetchStudents()
@@ -166,6 +169,8 @@ export default function GuardianPhonesPage() {
       </div>
     )
   }
+
+    if (authLoading || !authVerified) return (<div className="min-h-screen flex items-center justify-center bg-[#fafaf9]"><div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" /></div>);
 
   return (
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-[#faf8f5] to-white">

@@ -148,7 +148,7 @@ export async function PATCH(request: Request) {
   try {
     const supabase = await createClient()
     const body = await request.json()
-    const { id, phone_number, id_number, points, add_points, rank, guardian_phone } = body
+    const { id, phone_number, id_number, points, add_points, rank, guardian_phone, halaqah } = body
 
     const studentId = id || new URL(request.url).searchParams.get("id")
 
@@ -157,6 +157,22 @@ export async function PATCH(request: Request) {
     }
 
     const updateData: any = {}
+    
+    // Check if halaqah changed
+    if (halaqah !== undefined) {
+      updateData.halaqah = halaqah
+      const { data: currentStudentHalaqah } = await supabase
+        .from("students")
+        .select("halaqah")
+        .eq("id", studentId)
+        .single()
+      
+      if (currentStudentHalaqah && currentStudentHalaqah.halaqah !== halaqah) {
+        // Drop pathway progress if student moved to a different circle
+        await supabase.from("pathway_level_completions").delete().eq("student_id", studentId)
+      }
+    }
+
     if (phone_number !== undefined) updateData.phone_number = phone_number
     if (id_number !== undefined) updateData.id_number = id_number
     if (rank !== undefined) updateData.rank = rank

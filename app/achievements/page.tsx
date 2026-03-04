@@ -207,7 +207,7 @@ function AchievementsPage() {
             </div>
             <h1 className="text-3xl font-bold text-[#1a2332]">الإنجازات</h1>
             
-            {userRole === "admin" && (
+            {(userRole && userRole !== "student" && userRole !== "teacher") && (
               <button
                 onClick={() => setIsDialogOpen(true)}
                 className="absolute top-0 right-0 flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[#D4AF37]/50 bg-[#D4AF37]/10 hover:bg-[#D4AF37]/20 text-[#C9A961] hover:text-[#D4AF37] text-sm font-semibold transition-colors"
@@ -247,7 +247,7 @@ function AchievementsPage() {
 
                       {/* Content */}
                       <div className="flex-1 p-5 relative">
-                        {userRole === "admin" && (
+                        {(userRole && userRole !== "student" && userRole !== "teacher") && (
                           <button
                             onClick={() => handleDeleteAchievement(achievement.id)}
                             className="absolute top-4 left-4 w-8 h-8 rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 text-red-400 hover:text-red-600 flex items-center justify-center transition-colors"
