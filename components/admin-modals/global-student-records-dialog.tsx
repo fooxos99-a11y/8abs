@@ -1,0 +1,205 @@
+﻿
+"use client"
+
+import React, { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { FileText, Calendar as CalendarIcon, CheckCircle2, XCircle, Clock, AlertCircle } from "lucide-react"
+
+export function GlobalStudentRecordsDialog() {
+  const router = useRouter()
+
+  const [isOpen, setIsOpen] = useState(true)
+  const [circles, setCircles] = useState<any[]>([])
+  const [studentsInCircles, setStudentsInCircles] = useState<Record<string, any[]>>({})
+  
+  const [selectedCircle, setSelectedCircle] = useState("")
+  const [selectedStudent, setSelectedStudent] = useState("")
+  
+  const [records, setRecords] = useState<any[]>([])
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false)
+
+  useEffect(() => {
+    fetchData()
+  }, [])
+
+  const fetchData = async () => {
+    try {
+      const supabase = createClient()
+      const [circlesRes, studentsRes] = await Promise.all([
+        supabase.from("circles").select("*").order("created_at", { ascending: false }),
+        supabase.from("students").select("*")
+      ])
+
+      if (!circlesRes.error && circlesRes.data) setCircles(circlesRes.data)
+      if (!studentsRes.error && studentsRes.data) {
+        const grouped: Record<string, any[]> = {}
+        studentsRes.data.forEach((s) => {
+          if (!grouped[s.circle_name]) grouped[s.circle_name] = []
+          grouped[s.circle_name].push(s)
+        })
+        setStudentsInCircles(grouped)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  useEffect(() => {
+    if (selectedStudent) {
+      fetchStudentRecords(selectedStudent)
+    } else {
+      setRecords([])
+    }
+  }, [selectedStudent])
+
+  const fetchStudentRecords = async (studentId: string) => {
+    setIsLoadingRecords(true)
+    try {
+      const res = await fetch(`/api/attendance?student_id=${studentId}`)
+      if (!res.ok) throw new Error("Failed to fetch")
+      const data = await res.json()
+      setRecords(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error(error)
+      setRecords([])
+    } finally {
+      setIsLoadingRecords(false)
+    }
+  }
+
+  const handleClose = (open: boolean) => {
+    if (!open) {
+      setIsOpen(false)
+      setTimeout(() => {
+        router.push("?")
+      }, 300)
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "present":
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-50 text-emerald-600 border border-emerald-200"><CheckCircle2 className="w-3.5 h-3.5" />حضور</span>;
+      case "absent":
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-red-50 text-red-600 border border-red-200"><XCircle className="w-3.5 h-3.5" />غياب</span>;
+      case "excused":
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-600 border border-amber-200"><AlertCircle className="w-3.5 h-3.5" />مستأذن</span>;
+      case "late":
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-orange-50 text-orange-600 border border-orange-200"><Clock className="w-3.5 h-3.5" />متأخر</span>;
+      default:
+        return <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-600 border border-gray-200">{status}</span>;
+    }
+  }
+
+  const getLevelLabel = (level: string) => {
+    switch (level) {
+      case "excellent": return <span className="text-emerald-600 font-medium">ممتاز</span>;
+      case "very_good": return <span className="text-blue-600 font-medium">جيد جدا</span>;
+      case "good": return <span className="text-amber-600 font-medium">جيد</span>;
+      case "not_completed": return <span className="text-gray-400">-</span>;
+      default: return <span className="text-gray-400">-</span>;
+    }
+  }
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl bg-white rounded-2xl p-0 overflow-hidden [&>button]:top-4 [&>button]:right-4 [&>button]:left-auto" dir="rtl">
+        <DialogHeader className="px-6 py-5 border-b border-[#D4AF37]/30 bg-gradient-to-r from-[#D4AF37]/8 to-transparent text-right">
+          <DialogTitle className="text-lg font-bold text-[#1a2332] pr-8 flex items-center gap-2">
+            <span className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
+              <FileText className="w-4 h-4" />
+            </span>
+            سجلات الطلاب
+          </DialogTitle>
+          <DialogDescription className="text-sm text-neutral-500 pr-10 mt-1">
+            اختر الحلقة ثم الطالب لعرض سجل الحضور والتقييمات
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="px-6 py-5 space-y-5">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-neutral-600">الحلقة</Label>
+              <Select value={selectedCircle} onValueChange={(val) => { setSelectedCircle(val); setSelectedStudent(""); setRecords([]); }}>
+                <SelectTrigger className="w-full text-sm rounded-xl border-[#D4AF37]/40 h-10">
+                  <SelectValue placeholder="اختر الحلقة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {circles.map((circle) => (
+                    <SelectItem key={circle.id} value={circle.name}>{circle.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div className="space-y-1.5">
+              <Label className="text-sm font-medium text-neutral-600">الطالب</Label>
+              <Select value={selectedStudent} onValueChange={setSelectedStudent} disabled={!selectedCircle}>
+                <SelectTrigger className="w-full text-sm rounded-xl border-[#D4AF37]/40 h-10">
+                  <SelectValue placeholder={!selectedCircle ? "اختر الحلقة أولا" : "اختر الطالب"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {selectedCircle && studentsInCircles[selectedCircle]?.map((student) => (
+                    <SelectItem key={student.id} value={student.id}>{student.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {selectedStudent && (
+            <div className="border border-[#D4AF37]/20 rounded-xl overflow-hidden shadow-sm bg-white">
+              <div className="bg-[#fcfbf9] px-4 py-3 border-b border-[#D4AF37]/10 flex items-center gap-2">
+                <CalendarIcon className="w-4 h-4 text-[#D4AF37]" />
+                <h3 className="font-semibold text-sm text-[#1a2332]">سجل التقييمات والحضور</h3>
+              </div>
+              
+              <div className="max-h-[300px] overflow-y-auto">
+                {isLoadingRecords ? (
+                  <div className="flex justify-center items-center py-10">
+                    <div className="w-6 h-6 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" />
+                  </div>
+                ) : records.length === 0 ? (
+                  <div className="text-center py-10 text-neutral-500 text-sm">
+                    لا توجد سجلات سابقة لهذا الطالب
+                  </div>
+                ) : (
+                  <table className="w-full text-right text-sm">
+                    <thead className="bg-[#faf9f6]/80 text-[#1a2332] sticky top-0 backdrop-blur-sm shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-[#D4AF37]/20">
+                      <tr>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap">التاريخ</th>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">الحالة</th>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">حفظ</th>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">تكرار</th>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">تسميع</th>
+                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">ربط</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#D4AF37]/10 text-neutral-600">
+                      {records.map((record) => (
+                        <tr key={record.id} className="hover:bg-[#fcfbf9] transition-colors">
+                          <td className="px-4 py-3 whitespace-nowrap text-xs tabular-nums text-neutral-800">{new Date(record.date).toLocaleDateString("en-GB")}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center">{getStatusBadge(record.status)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">{getLevelLabel(record.hafiz_level)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">{getLevelLabel(record.tikrar_level)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">{getLevelLabel(record.samaa_level)}</td>
+                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">{getLevelLabel(record.rabet_level)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

@@ -7,7 +7,7 @@ export function HeroSection() {
     <section
       className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden bg-gradient-to-b from-white via-[#faf8f5] to-white px-4 sm:px-6 pt-0 pb-2 sm:pb-3"
     >
-      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#d8a355] to-transparent opacity-50" />
+      
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-[#d8a355] to-transparent opacity-50" />
 
         <div className="relative flex flex-col items-center w-full mt-[-3rem] mb-0">

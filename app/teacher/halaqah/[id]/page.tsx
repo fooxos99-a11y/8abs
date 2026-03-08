@@ -6,7 +6,7 @@ import { Header } from "@/components/header"
 import { Footer } from "@/components/footer"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { ArrowRight, RotateCcw, MessageSquare } from "lucide-react"
+import { ArrowRight, RotateCcw, MessageSquare, Loader2 } from "lucide-react"
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
@@ -53,6 +53,10 @@ export default function HalaqahManagement() {
 	const [notesStudentId, setNotesStudentId] = useState<number | null>(null)
 	const [notesText, setNotesText] = useState("")
 	const [isNotesDialogOpen, setIsNotesDialogOpen] = useState(false)
+        const [isCompDialogOpen, setIsCompDialogOpen] = useState(false)
+        const [compStudentId, setCompStudentId] = useState<number | null>(null)
+        const [missedDays, setMissedDays] = useState<any[]>([])
+        const [isCompLoading, setIsCompLoading] = useState(false)
 
 	const showAlert = useAlertDialog()
 
@@ -306,7 +310,48 @@ export default function HalaqahManagement() {
 		setStudents(students.map((s) => ({ ...s, attendance: "excused", evaluation: {} })))
 	}
 
-	const openNotesDialog = (studentId: number) => {
+	const openCompDialog = async (studentId: number) => {
+                setCompStudentId(studentId)
+                setMissedDays([])
+                setIsCompDialogOpen(true)
+                setIsCompLoading(true)
+                try {
+                        const res = await fetch(`/api/compensation/missed?student_id=${studentId}`)
+                        const data = await res.json()
+                        setMissedDays(data.missedDays || [])
+                } catch (e) {
+                        console.error(e)
+                } finally {
+                        setIsCompLoading(false)
+                }
+        }
+
+        const handleCompensate = async (date: string) => {
+                try {
+                        const res = await fetch(`/api/compensation`, {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                        student_id: compStudentId,
+                                        teacher_id: teacherData.id,
+                                        halaqah: teacherData.halaqah,
+                                        date
+                                })
+                        })
+                        const data = await res.json()
+                        if (data.success) {
+                                // أزل اليوم من القائمة
+                                setMissedDays(prev => prev.filter(d => d.date !== date))
+                                await showAlert(`تم التعويض بنجاح وتم إضافة ${data.pointsAdded} نقطة للطالب.`, "نجاح")
+                        } else {
+                                await showAlert(data.error || "خطأ في التعويض", "خطأ")
+                        }
+                } catch (e) {
+                        await showAlert("حدث خطأ في النظام", "خطأ")
+                }
+        }
+
+        const openNotesDialog = (studentId: number) => {
 		const student = students.find((s) => s.id === studentId)
 		setNotesStudentId(studentId)
 		setNotesText(student?.notes || "")
@@ -440,21 +485,31 @@ export default function HalaqahManagement() {
 											<div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
 												<div className="lg:col-span-1">
 													<div className="space-y-2">
-														<div className="flex items-center gap-2">
-															<p className="text-base font-bold text-[#1a2332]">{student.name}</p>
-															<Button
-																variant="outline"
-																onClick={() => openNotesDialog(student.id)}
-																title="الملاحظات"
-																className={`h-5 w-5 rounded-md p-0 transition-all flex-shrink-0 ${
-																	student.notes
-																		? "bg-[#D4AF37]/20 border-[#D4AF37] text-neutral-800"
-																		: "border-[#D4AF37]/80 text-neutral-600"
-																}`}
-															>
-																<MessageSquare className="w-3 h-3" />
-															</Button>
-														</div>
+														<div className="flex flex-col gap-2">
+                                                                                                                        <div className="flex items-center gap-2">
+                                                                                                                                <p className="text-base font-bold text-[#1a2332]">{student.name}</p>
+                                                                                                                                <Button
+                                                                                                                                        variant="outline"
+                                                                                                                                        onClick={() => openNotesDialog(student.id)}
+                                                                                                                                        title="الملاحظات"
+                                                                                                                                        className={`h-5 w-5 rounded-md p-0 transition-all flex-shrink-0 ${
+                                                                                                                                                student.notes
+                                                                                                                                                        ? "bg-[#D4AF37]/20 border-[#D4AF37] text-neutral-800"
+                                                                                                                                                        : "border-[#D4AF37]/80 text-neutral-600"
+                                                                                                                                        }`}
+                                                                                                                                >
+                                                                                                                                        <MessageSquare className="w-3 h-3" />
+                                                                                                                                </Button>
+                                                                                                                                <Button
+                                                                                                                                        variant="outline"
+                                                                                                                                        onClick={() => openCompDialog(student.id)}
+                                                                                                                                        title="تعويض الحفظ"
+                                                                                                                                        className="h-5 w-5 rounded-md p-0 transition-all flex-shrink-0 border-[#D4AF37]/80 text-neutral-600 hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]"
+                                                                                                                                >
+                                                                                                                                        <RotateCcw className="w-3 h-3" />
+                                                                                                                                </Button>
+                                                                                                                        </div>
+                                                                                                                </div>
 														<div className="flex flex-row gap-2 w-full">
 															<Button
 																variant="outline"
@@ -597,7 +652,38 @@ export default function HalaqahManagement() {
 			<Footer />
 
 			{/* Notes Dialog */}
-			<Dialog open={isNotesDialogOpen} onOpenChange={setIsNotesDialogOpen}>
+			
+                        <Dialog open={isCompDialogOpen} onOpenChange={setIsCompDialogOpen}>
+                                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto" dir="rtl">
+                                        <DialogTitle className="text-xl font-bold text-center text-[#1a2332] mb-4">تعويض الحفظ السابق</DialogTitle>
+                                        <div className="space-y-4">
+                                                {isCompLoading ? (
+                                                        <div className="flex justify-center items-center py-6"><Loader2 className="w-6 h-6 animate-spin text-[#D4AF37]" /></div>
+                                                ) : missedDays.length === 0 ? (
+                                                        <div className="text-center text-[#D4AF37] font-bold py-6">لا يوجد أيام تم التفريط فيها</div>
+                                                ) : (
+                                                        <div className="space-y-3">
+                                                                {missedDays.map((md, idx) => (
+                                                                        <div key={idx} className="flex items-center justify-between bg-neutral-50 p-3 rounded-lg border border-neutral-200">
+                                                                                <div>
+                                                                                        <p className="font-semibold text-sm text-[#1a2332] mb-1">{md.content}</p>
+                                                                                </div>
+                                                                                <Button 
+                                                                                        size="sm" 
+                                                                                        onClick={() => handleCompensate(md.date)}
+                                                                                        className="bg-[#D4AF37] hover:bg-[#C9A961] text-white rounded-lg px-3 py-1 h-8 text-xs font-bold transition-all shrink-0"
+                                                                                >
+                                                                                        تم التعويض
+                                                                                </Button>
+                                                                        </div>
+                                                                ))}
+                                                        </div>
+                                                )}
+                                        </div>
+                                </DialogContent>
+                        </Dialog>
+
+                        <Dialog open={isNotesDialogOpen} onOpenChange={setIsNotesDialogOpen}>
 				<DialogContent className="max-w-md" dir="rtl">
 					<DialogTitle className="sr-only">الملاحظات</DialogTitle>
 					<div className="space-y-4 pt-4">

@@ -1,3 +1,4 @@
+import { PAGE_REFERENCES } from './quran-pages';
 // بيانات القرآن الكريم - المصحف الشريف (مصحف المدينة المنورة)
 // كل وجه = صفحة واحدة، المصحف = 604 صفحة
 
@@ -232,36 +233,62 @@ export function getSurahTotalLines(surahNumber: number): number {
 /**
  * رقم الآية عند موضع عائم داخل سورة معينة (بالاستيفاء الخطي)
  */
-export function getVerseAtFloatPos(surahNumber: number, floatPos: number): number {
-  const s = SURAHS.find((x) => x.number === surahNumber)
-  if (!s) return 1
-  const linesFromStart = (floatPos - getSurahFloatPos(surahNumber)) * 15
-  const tl = getSurahTotalLines(surahNumber)
-  return Math.min(s.verseCount, Math.max(1, Math.ceil((linesFromStart * s.verseCount) / tl + 0.001)))
+
+
+export function getAyahByPageFloat(p: number): { surah: number; ayah: number; customText?: string } {
+  if (p >= 605) return { surah: 114, ayah: 6 };
+  const MathFloorP = Math.floor(p);
+  const fraction = p % 1;
+  const idx = MathFloorP - 1;
+  const start = PAGE_REFERENCES[idx];
+  if (fraction === 0) return start;
+
+  const end = PAGE_REFERENCES[idx + 1] || { surah: 114, ayah: 6 };
+  
+  if (start.surah === end.surah) {
+    const totalVersesInPage = end.ayah - start.ayah;
+    return { surah: start.surah, ayah: start.ayah + Math.floor(totalVersesInPage * fraction) };
+  } else {
+    let totalVersesInPage = 0;
+    for (let sId = start.surah; sId <= end.surah; sId++) {
+      const s = SURAHS.find((x) => x.number === sId)!;
+      if (sId === start.surah) totalVersesInPage += (s.verseCount - start.ayah) + 1;
+      else if (sId === end.surah) totalVersesInPage += Math.max(0, end.ayah - 1);
+      else totalVersesInPage += s.verseCount;
+    }
+    
+    let targetVerses = Math.floor(totalVersesInPage * fraction);
+    if (targetVerses === 0) return start;
+
+    for (let sId = start.surah; sId <= end.surah; sId++) {
+      const s = SURAHS.find((x) => x.number === sId)!;
+      let vInSurah = 0;
+      if (sId === start.surah) vInSurah = (s.verseCount - start.ayah) + 1;
+      else if (sId === end.surah) vInSurah = Math.max(0, end.ayah - 1);
+      else vInSurah = s.verseCount;
+
+      if (targetVerses < vInSurah) {
+        if (sId === start.surah) return { surah: sId, ayah: start.ayah + targetVerses };
+        else return { surah: sId, ayah: targetVerses + 1 };
+      } else {
+        targetVerses -= vInSurah;
+      }
+    }
+    return end;
+  }
 }
 
-/**
- * بناء تسمية سورة واحدة مع نطاق الآيات إن كانت جزئية
- */
-function buildSurahLabel(surah: Surah, sessionStart: number, sessionEnd: number): string {
-  const EPS = 0.001
-  const surahStart = getSurahFloatPos(surah.number)
-  const surahEnd = getSurahEndFloat(surah.number)
-  const pS = sessionStart > surahStart + EPS
-  const pE = sessionEnd < surahEnd - EPS
-  if (!pS && !pE) return surah.name
-  const fromV = pS ? getVerseAtFloatPos(surah.number, sessionStart) : 1
-  const toV = pE ? getVerseAtFloatPos(surah.number, sessionEnd - EPS) : surah.verseCount
-  // إذا كانت النطاقات متساوية تقريباً اعرض كـ "نصف"
-  if (fromV === toV) return `${surah.name} (${fromV})`
-  return `${surah.name} (${fromV}-${toV})`
+export function getInclusiveEndAyah(p: number) {
+  const next = getAyahByPageFloat(p);
+  if (next.surah === 114 && next.ayah === 7) return { surah: 114, ayah: 6 };
+  if (next.ayah > 1) {
+    return { surah: next.surah, ayah: next.ayah - 1 };
+  } else {
+    const prevSurah = SURAHS.find((s) => s.number === next.surah - 1)!;
+    return { surah: prevSurah.number, ayah: prevSurah.verseCount };
+  }
 }
 
-/**
- * وصف محتوى الجلسة بدقة مع أرقام الآيات للسور الجزئية
- * يدعم 0.5 / 1 / 2 وجه يومياً
- * direction: asc = تصاعدي (من البداية), desc = تنازلي (من النهاية)
- */
 export function getSessionContent(
   planStartPage: number,
   dailyPages: number,
@@ -269,41 +296,60 @@ export function getSessionContent(
   totalPages: number = 0,
   direction: "asc" | "desc" = "asc"
 ): { text: string; fromSurah: string; toSurah: string } {
-  let sessionStart: number
-  let sessionEnd: number
+  let sessionStart = direction === "desc" ? (planStartPage + totalPages - sessionNum * dailyPages) : planStartPage + (sessionNum - 1) * dailyPages;
+  let sessionEnd = sessionStart + dailyPages;
+  // Make sure sessionEnd does not jump over the end of Quran
+  sessionEnd = Math.min(sessionEnd, 605);
+  
+  const startRef = getAyahByPageFloat(sessionStart);
+  const endRef = getInclusiveEndAyah(sessionEnd);
 
-  if (direction === "desc") {
-    const effectiveEnd = planStartPage + totalPages
-    sessionStart = effectiveEnd - sessionNum * dailyPages
-    sessionEnd = effectiveEnd - (sessionNum - 1) * dailyPages
+  const startSurahName = SURAHS.find((x) => x.number === startRef.surah)!.name;
+  const endSurahName = SURAHS.find((x) => x.number === endRef.surah)!.name;
+  
+  let formattedText = "";
+  const startCustom = startRef.customText ? ` (${startRef.customText})` : "";
+  const endCustom = endRef.customText ? ` (${endRef.customText})` : "";
+  
+  if (startRef.surah === endRef.surah && startRef.ayah === endRef.ayah && startCustom === endCustom) {
+    formattedText = `${startSurahName} ${startRef.ayah}${startCustom}`;
   } else {
-    sessionStart = planStartPage + (sessionNum - 1) * dailyPages
-    sessionEnd = sessionStart + dailyPages
+    formattedText = `${startSurahName} ${startRef.ayah}${startCustom} - ${endSurahName} ${endRef.ayah}${endCustom}`;
   }
-
-  const EPS = 0.001
-  const startSurah = getSurahAtFloatPos(sessionStart)
-  const endSurah = getSurahAtFloatPos(sessionEnd - EPS)
-
-  // جميع السور التي تبدأ داخل نطاق الجلسة
-  const surahsInSession = SURAHS.filter((s) => {
-    const pos = getSurahFloatPos(s.number)
-    return pos >= getSurahFloatPos(startSurah.number) && pos < sessionEnd - EPS
-  })
-
-  if (surahsInSession.length === 0) {
-    return {
-      text: buildSurahLabel(startSurah, sessionStart, sessionEnd),
-      fromSurah: startSurah.name,
-      toSurah: endSurah.name,
-    }
-  }
-
-  const parts = surahsInSession.map((s) => buildSurahLabel(s, sessionStart, sessionEnd))
 
   return {
-    text: parts.join(" + "),
-    fromSurah: startSurah.name,
-    toSurah: endSurah.name,
+    text: formattedText,
+    fromSurah: startSurahName,
+    toSurah: endSurahName,
+  };
+}
+
+export function getOffsetContent(
+  planStartPage: number,
+  offset: number,
+  size: number,
+  totalPages: number = 0,
+  direction: "asc" | "desc" = "asc"
+) {
+  let sessionStart = direction === "desc" ? (planStartPage + totalPages - offset - size) : planStartPage + offset;
+  let sessionEnd = Math.min(sessionStart + size, 605);
+  // Ensure we don't go below 1 or total limits depending on strict bounds if needed
+  sessionStart = Math.max(1, sessionStart);
+  
+  if (size <= 0) return null;
+
+  const startRef = getAyahByPageFloat(sessionStart);
+  const endRef = getInclusiveEndAyah(sessionEnd);
+
+  const startSurahName = SURAHS.find((x) => x.number === startRef.surah)!.name; 
+  const endSurahName = SURAHS.find((x) => x.number === endRef.surah)!.name;     
+
+  let formattedText = "";
+  if (startRef.surah === endRef.surah && startRef.ayah === endRef.ayah) {       
+    formattedText = `${startSurahName} ${startRef.ayah}`;
+  } else {
+    formattedText = `${startSurahName} ${startRef.ayah} - ${endSurahName} ${endRef.ayah}`;
   }
+
+  return { text: formattedText };
 }

@@ -1,178 +1,273 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
-import { createClient } from "@/lib/supabase/client"
-import { Header } from "@/components/header"
-import { Footer } from "@/components/footer"
-import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
-import { Badge } from "@/components/ui/badge"
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { Header } from "@/components/header";
+import { Footer } from "@/components/footer";
+import { Button } from "@/components/ui/button";
 import {
-  BookOpen, Users, ChevronRight, Plus, Trash2, CheckCircle2, Target, Calendar,
-  BookMarked, BarChart3, ArrowRight, ChevronDown, Check,
-} from "lucide-react"
-import { SURAHS, calculateTotalPages, calculateTotalDays } from "@/lib/quran-data"
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+  SelectGroup,
+} from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Badge } from "@/components/ui/badge";
+import {
+  BookOpen,
+  Users,
+  ChevronRight,
+  Plus,
+  Trash2,
+  CheckCircle2,
+  Target,
+  Calendar,
+  BookMarked,
+  BarChart3,
+  ArrowRight,
+  ChevronDown,
+  Check,
+} from "lucide-react";
+import {
+  SURAHS,
+  calculateTotalPages,
+  calculateTotalDays,
+} from "@/lib/quran-data";
 
 interface Circle {
-  id: string
-  name: string
-  studentCount: number
+  id: string;
+  name: string;
+  studentCount: number;
 }
 
 interface Student {
-  id: string
-  name: string
-  halaqah: string
-  account_number: number
+  id: string;
+  name: string;
+  halaqah: string;
+  account_number: number;
 }
 
 interface StudentPlan {
-  id: string
-  student_id: string
-  start_surah_number: number
-  start_surah_name: string
-  end_surah_number: number
-  end_surah_name: string
-  daily_pages: number
-  total_pages: number
-  total_days: number
-  start_date: string
-  created_at: string
+  id: string;
+  student_id: string;
+  start_surah_number: number;
+  start_surah_name: string;
+  end_surah_number: number;
+  end_surah_name: string;
+  daily_pages: number;
+  total_pages: number;
+  total_days: number;
+  start_date: string;
+  created_at: string;
 }
 
+const MURAAJAA_OPTIONS = [
+  { value: "20", label: "جزء واحد (20 وجه)" },
+  { value: "40", label: "جزئين (40 وجه)" },
+  { value: "60", label: "3 أجزاء (60 وجه)" },
+];
+
+const RABT_OPTIONS = [
+  { value: "10", label: "10 أوجه" },
+  { value: "20", label: "جزء واحد (20 وجه)" },
+];
+
 const DAILY_OPTIONS = [
-  { value: "0.3333", label: "ثلث وجه (5 أسطر)" },
+  { value: "0.25", label: "ربع وجه (حوالي 4 أسطر)" },
   { value: "0.5", label: "نصف وجه" },
   { value: "1", label: "وجه واحد" },
   { value: "2", label: "وجهان" },
-]
+];
 
 function dailyLabel(v: number) {
-  if (v <= 0.334 && v >= 0.332) return "ثلث وجه"
-  if (v === 0.5) return "نصف وجه"
-  if (v === 1) return "وجه واحد"
-  if (v === 2) return "وجهان"
-  return `${v} وجه`
+  if (v === 0.25) return "ربع وجه";
+  if (v === 0.5) return "نصف وجه";
+  if (v === 1) return "وجه واحد";
+  if (v === 2) return "وجهان";
+  return `${v} وجه`;
 }
 
 export default function StudentPlansPage() {
-  const router = useRouter()
-  const [isLoading, setIsLoading] = useState(true)
-  const [circles, setCircles] = useState<Circle[]>([])
-  const [selectedCircle, setSelectedCircle] = useState<string | null>(null)
-  const [students, setStudents] = useState<Student[]>([])
-  const [studentPlans, setStudentPlans] = useState<Record<string, StudentPlan | null>>({})
-  const [studentProgress, setStudentProgress] = useState<Record<string, number>>({})
+  const router = useRouter();
+  const [isLoading, setIsLoading] = useState(true);
+  const [circles, setCircles] = useState<Circle[]>([]);
+  const [selectedCircle, setSelectedCircle] = useState<string | null>(null);
+  const [students, setStudents] = useState<Student[]>([]);
+  const [studentPlans, setStudentPlans] = useState<
+    Record<string, StudentPlan | null>
+  >({});
+  const [studentProgress, setStudentProgress] = useState<
+    Record<string, number>
+  >({});
 
   // نافذة إضافة الخطة
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null)
-  const [startSurah, setStartSurah] = useState<string>("")
-  const [endSurah, setEndSurah] = useState<string>("")
-  const [dailyPages, setDailyPages] = useState<string>("1")
-  const [direction, setDirection] = useState<"asc" | "desc">("asc")
-  const [customDays, setCustomDays] = useState<string>("")
-  const [startOpen, setStartOpen] = useState(false)
-  const [endOpen, setEndOpen] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
-  const [saveMsg, setSaveMsg] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [startSurah, setStartSurah] = useState<string>("");
+  const [endSurah, setEndSurah] = useState<string>("");
+  const [dailyPages, setDailyPages] = useState<string>("1");
+  const [customDays, setCustomDays] = useState<string>("");
+  const [startOpen, setStartOpen] = useState(false);
+  const [endOpen, setEndOpen] = useState(false);
+  const [startVerse, setStartVerse] = useState<string>("");
+  const [endVerse, setEndVerse] = useState<string>("");
+
+  // الحفظ السابق
+  const [hasPrevious, setHasPrevious] = useState(false);
+  const [prevStartSurah, setPrevStartSurah] = useState<string>("");
+  const [prevEndSurah, setPrevEndSurah] = useState<string>("");
+  const [muraajaaPages, setMuraajaaPages] = useState<string>("20");
+  const [rabtPages, setRabtPages] = useState<string>("10");
+  const [prevStartOpen, setPrevStartOpen] = useState(false);
+  const [prevEndOpen, setPrevEndOpen] = useState(false);
+  const [prevStartVerse, setPrevStartVerse] = useState<string>("");
+  const [prevEndVerse, setPrevEndVerse] = useState<string>("");
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<{
+    type: "success" | "error";
+    text: string;
+  } | null>(null);
 
   // التحقق من الصلاحيات
   useEffect(() => {
     const check = async () => {
-      const loggedIn = localStorage.getItem("isLoggedIn") === "true"
-      const accountNumber = localStorage.getItem("accountNumber")
-      if (!loggedIn || !accountNumber) { router.push("/login"); return }
-
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("users").select("role").eq("account_number", Number(accountNumber)).single()
-      const role = data?.role || ""
-      const adminRoles = ["admin", "مدير", "سكرتير", "مشرف تعليمي", "مشرف تربوي", "مشرف برامج"]
-      if (!adminRoles.includes(role) && role !== "admin") {
-        router.push("/login"); return
+      const loggedIn = localStorage.getItem("isLoggedIn") === "true";
+      const accountNumber = localStorage.getItem("accountNumber");
+      if (!loggedIn || !accountNumber) {
+        router.push("/login");
+        return;
       }
-      setIsLoading(false)
-    }
-    check()
-  }, [router])
+
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("users")
+        .select("role")
+        .eq("account_number", Number(accountNumber))
+        .single();
+      const role = data?.role || "";
+      const adminRoles = [
+        "admin",
+        "مدير",
+        "سكرتير",
+        "مشرف تعليمي",
+        "مشرف تربوي",
+        "مشرف برامج",
+      ];
+      if (!adminRoles.includes(role) && role !== "admin") {
+        router.push("/login");
+        return;
+      }
+      setIsLoading(false);
+    };
+    check();
+  }, [router]);
 
   // جلب الحلقات
   useEffect(() => {
-    if (isLoading) return
+    if (isLoading) return;
     fetch("/api/circles")
       .then((r) => r.json())
       .then((d) => setCircles(d.circles || []))
-      .catch(console.error)
-  }, [isLoading])
+      .catch(console.error);
+  }, [isLoading]);
 
   // جلب طلاب الحلقة المختارة
   useEffect(() => {
-    if (!selectedCircle) return
+    if (!selectedCircle) return;
     fetch("/api/students")
       .then((r) => r.json())
       .then((d) => {
         const circleStudents = (d.students || []).filter(
-          (s: Student) => (s.halaqah || "").trim() === selectedCircle.trim()
-        )
-        setStudents(circleStudents)
+          (s: Student) => (s.halaqah || "").trim() === selectedCircle.trim(),
+        );
+        setStudents(circleStudents);
         // جلب خطط هؤلاء الطلاب
-        fetchPlansForStudents(circleStudents)
+        fetchPlansForStudents(circleStudents);
       })
-      .catch(console.error)
-  }, [selectedCircle])
+      .catch(console.error);
+  }, [selectedCircle]);
 
   const fetchPlansForStudents = async (studs: Student[]) => {
-    const plans: Record<string, StudentPlan | null> = {}
-    const progress: Record<string, number> = {}
+    const plans: Record<string, StudentPlan | null> = {};
+    const progress: Record<string, number> = {};
     await Promise.all(
       studs.map(async (s) => {
         try {
-          const res = await fetch(`/api/student-plans?student_id=${s.id}`)
-          const data = await res.json()
-          plans[s.id] = data.plan || null
-          progress[s.id] = data.progressPercent || 0
+          const res = await fetch(`/api/student-plans?student_id=${s.id}`);
+          const data = await res.json();
+          plans[s.id] = data.plan || null;
+          progress[s.id] = data.progressPercent || 0;
         } catch {
-          plans[s.id] = null
-          progress[s.id] = 0
+          plans[s.id] = null;
+          progress[s.id] = 0;
         }
-      })
-    )
-    setStudentPlans(plans)
-    setStudentProgress(progress)
-  }
+      }),
+    );
+    setStudentPlans(plans);
+    setStudentProgress(progress);
+  };
 
   const openAddDialog = (student: Student) => {
-    setSelectedStudent(student)
-    setStartSurah("")
-    setEndSurah("")
-    setDailyPages("1")
-    setDirection("asc")
-    setCustomDays("")
-    setSaveMsg(null)
-    setStartOpen(false)
-    setEndOpen(false)
-    setAddDialogOpen(true)
-  }
+    setSelectedStudent(student);
+    setStartSurah("");
+    setEndSurah("");
+    setDailyPages("1");
+    setCustomDays("");
+    setSaveMsg(null);
+    setStartOpen(false);
+    setEndOpen(false);
+    setStartVerse("");
+    setEndVerse("");
+    setPrevStartVerse("");
+    setPrevEndVerse("");
+
+    setHasPrevious(false);
+    setPrevStartSurah("");
+    setPrevEndSurah("");
+    setMuraajaaPages("20");
+    setRabtPages("10");
+    setPrevStartOpen(false);
+    setPrevEndOpen(false);
+
+    setAddDialogOpen(true);
+  };
 
   const handleSavePlan = async () => {
     if (!selectedStudent || !startSurah || !endSurah || !dailyPages) {
-      setSaveMsg({ type: "error", text: "يرجى تعبئة جميع الحقول" }); return
+      setSaveMsg({ type: "error", text: "يرجى تعبئة جميع الحقول" });
+      return;
     }
-    const startNum = parseInt(startSurah)
-    const endNum = parseInt(endSurah)
+    const startNum = parseInt(startSurah);
+    const endNum = parseInt(endSurah);
 
-    const startSurahData = SURAHS.find((s) => s.number === startNum)!
-    const endSurahData = SURAHS.find((s) => s.number === endNum)!
-    const total = calculateTotalPages(startNum, endNum)
-    const days = calculateTotalDays(total, parseFloat(dailyPages))
-    const effectiveDays = customDays && parseInt(customDays) > 0 ? parseInt(customDays) : days
+    const startSurahData = SURAHS.find((s) => s.number === startNum)!;
+    const endSurahData = SURAHS.find((s) => s.number === endNum)!;
+    const total = calculateTotalPages(startNum, endNum);
+    const days = calculateTotalDays(total, parseFloat(dailyPages));
+    const effectiveDays = days;
 
-    setIsSaving(true)
+    setIsSaving(true);
     try {
       const res = await fetch("/api/student-plans", {
         method: "POST",
@@ -181,77 +276,144 @@ export default function StudentPlansPage() {
           student_id: selectedStudent.id,
           start_surah_number: startNum,
           start_surah_name: startSurahData.name,
+          start_verse: startVerse ? parseInt(startVerse) : null,
           end_surah_number: endNum,
           end_surah_name: endSurahData.name,
+          end_verse: endVerse ? parseInt(endVerse) : null,
           daily_pages: parseFloat(dailyPages),
           total_days: effectiveDays,
           direction,
+          has_previous: hasPrevious,
+          prev_start_surah:
+            hasPrevious && prevStartSurah ? parseInt(prevStartSurah) : null,
+          prev_end_surah:
+            hasPrevious && prevEndSurah ? parseInt(prevEndSurah) : null,
+          muraajaa_pages: parseFloat(muraajaaPages),
+          rabt_pages: parseFloat(rabtPages),
           start_date: new Date().toISOString().split("T")[0],
         }),
-      })
-      const data = await res.json()
+      });
+      const data = await res.json();
       if (res.ok) {
         setSaveMsg({
           type: "success",
           text: `✓ تم حفظ الخطة — ${total} وجه خلال ${effectiveDays} يوم`,
-        })
+        });
         // تحديث الخطة في القائمة
-        setStudentPlans((prev) => ({ ...prev, [selectedStudent.id]: data.plan }))
-        setStudentProgress((prev) => ({ ...prev, [selectedStudent.id]: 0 }))
-        setTimeout(() => setAddDialogOpen(false), 1500)
+        setStudentPlans((prev) => ({
+          ...prev,
+          [selectedStudent.id]: data.plan,
+        }));
+        setStudentProgress((prev) => ({ ...prev, [selectedStudent.id]: 0 }));
+        setTimeout(() => setAddDialogOpen(false), 1500);
       } else {
-        setSaveMsg({ type: "error", text: data.error || "فشل في حفظ الخطة" })
+        setSaveMsg({ type: "error", text: data.error || "فشل في حفظ الخطة" });
       }
     } catch {
-      setSaveMsg({ type: "error", text: "حدث خطأ، يرجى المحاولة مجدداً" })
+      setSaveMsg({ type: "error", text: "حدث خطأ، يرجى المحاولة مجدداً" });
     } finally {
-      setIsSaving(false)
+      setIsSaving(false);
     }
-  }
+  };
 
   const handleDeletePlan = async (studentId: string) => {
-    if (!confirm("هل أنت متأكد من حذف خطة هذا الطالب؟")) return
+    if (!confirm("هل أنت متأكد من حذف خطة هذا الطالب؟")) return;
     try {
-      await fetch(`/api/student-plans?student_id=${studentId}`, { method: "DELETE" })
-      setStudentPlans((prev) => ({ ...prev, [studentId]: null }))
-      setStudentProgress((prev) => ({ ...prev, [studentId]: 0 }))
+      await fetch(`/api/student-plans?student_id=${studentId}`, {
+        method: "DELETE",
+      });
+      setStudentPlans((prev) => ({ ...prev, [studentId]: null }));
+      setStudentProgress((prev) => ({ ...prev, [studentId]: 0 }));
     } catch (e) {
-      console.error(e)
+      console.error(e);
     }
-  }
+  };
 
   // السور مرتبة تنازلياً (من الناس إلى البقرة)
-  const surahsDescending = [...SURAHS].reverse()
+  const surahsDescending = [...SURAHS].reverse();
 
-  // قائمة السور المتاحة لنهاية الخطة بحسب الاتجاه والبداية
-  const startNum = startSurah ? parseInt(startSurah) : null
-  const endSurahOptions = (() => {
-    if (!startNum) return direction === "asc" ? surahsDescending : SURAHS
-    if (direction === "asc") {
-      // تصاعدي: النهاية يجب أن تكون بعد البداية — تُعرض تنازلياً (الناس أولاً)
-      return surahsDescending.filter((s) => s.number > startNum)
-    } else {
-      // تنازلي: النهاية يجب أن تكون قبل البداية — تُعرض تصاعدياً (البقرة أولاً)
-      return SURAHS.filter((s) => s.number < startNum)
+  const startNum = startSurah ? parseInt(startSurah) : null;
+  const endNum = endSurah ? parseInt(endSurah) : null;
+  const direction = (startNum && endNum && startNum > endNum) ? "desc" : "asc";
+
+  // خيارات بداية الخطة
+  const startSurahOptions = (() => {
+    let opts = SURAHS; // إظهار كل السور في البداية
+    if (hasPrevious && prevStartSurah && prevEndSurah) {
+      const pStart = parseInt(prevStartSurah);
+      const pEnd = parseInt(prevEndSurah);
+      const min = Math.min(pStart, pEnd);
+      const max = Math.max(pStart, pEnd);
+      opts = opts.filter((s) => s.number < min || s.number > max);
     }
-  })()
+    return opts;
+  })();
+
+  // قائمة السور المتاحة لنهاية الخطة
+  const endSurahOptions = (() => {
+    if (!startNum) return startSurahOptions;
+    // يمكنه اختيار أي سورة أخرى كـ نهاية، والتصاعدي والتنازلي يحسب تلقائيا
+    return startSurahOptions.filter((s) => s.number !== startNum);
+  })();
 
   // إعادة تعيين النهاية إذا أصبحت غير صالحة
-  const endNum = endSurah ? parseInt(endSurah) : null
-  const isEndValid = endNum !== null && endSurahOptions.some((s) => s.number === endNum)
-  const previewTotal = startSurah && endSurah && isEndValid
-    ? calculateTotalPages(parseInt(startSurah), parseInt(endSurah))
-    : 0
-  const previewDays = previewTotal > 0 && dailyPages
-    ? calculateTotalDays(previewTotal, parseFloat(dailyPages))
-    : 0
+  const isEndValid =
+    endNum !== null && endSurahOptions.some((s) => s.number === endNum);
+  const previewTotal =
+    startSurah && endSurah && isEndValid
+      ? calculateTotalPages(parseInt(startSurah), parseInt(endSurah))
+      : 0;
+  const previewDays =
+    previewTotal > 0 && dailyPages
+      ? calculateTotalDays(previewTotal, parseFloat(dailyPages))
+      : 0;
+
+  useEffect(() => {
+    if (startOpen && startSurah) {
+      setTimeout(() => {
+        document
+          .getElementById(`start-surah-${startSurah}`)
+          ?.scrollIntoView({ block: "center" });
+      }, 50);
+    }
+  }, [startOpen, startSurah]);
+
+  useEffect(() => {
+    if (endOpen && endSurah) {
+      setTimeout(() => {
+        document
+          .getElementById(`end-surah-${endSurah}`)
+          ?.scrollIntoView({ block: "center" });
+      }, 50);
+    }
+  }, [endOpen, endSurah]);
+
+  useEffect(() => {
+    if (prevStartOpen && prevStartSurah) {
+      setTimeout(() => {
+        document
+          .getElementById(`prev-start-surah-${prevStartSurah}`)
+          ?.scrollIntoView({ block: "center" });
+      }, 50);
+    }
+  }, [prevStartOpen, prevStartSurah]);
+
+  useEffect(() => {
+    if (prevEndOpen && prevEndSurah) {
+      setTimeout(() => {
+        document
+          .getElementById(`prev-end-surah-${prevEndSurah}`)
+          ?.scrollIntoView({ block: "center" });
+      }, 50);
+    }
+  }, [prevEndOpen, prevEndSurah]);
 
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-[#D4AF37] border-t-transparent animate-spin" />
       </div>
-    )
+    );
   }
 
   return (
@@ -259,7 +421,6 @@ export default function StudentPlansPage() {
       <Header />
       <main className="flex-1 py-10 px-4">
         <div className="container mx-auto max-w-5xl space-y-8">
-
           {/* رأس الصفحة */}
           <div className="border-b border-[#D4AF37]/40 pb-6 flex items-center gap-3">
             <button
@@ -283,7 +444,9 @@ export default function StudentPlansPage() {
                 <div className="w-9 h-9 rounded-lg bg-[#D4AF37]/10 border border-[#D4AF37]/30 flex items-center justify-center">
                   <BookOpen className="w-4 h-4 text-[#D4AF37]" />
                 </div>
-                <h2 className="text-base font-bold text-[#1a2332]">اختر الحلقة</h2>
+                <h2 className="text-base font-bold text-[#1a2332]">
+                  اختر الحلقة
+                </h2>
               </div>
               <div className="divide-y divide-[#D4AF37]/20">
                 {circles.length === 0 ? (
@@ -302,8 +465,12 @@ export default function StudentPlansPage() {
                           <BookOpen className="w-4 h-4 text-[#D4AF37]" />
                         </div>
                         <div className="text-right">
-                          <p className="font-semibold text-[#1a2332] text-base">{circle.name}</p>
-                          <p className="text-xs text-neutral-400 mt-0.5">{circle.studentCount} طالب</p>
+                          <p className="font-semibold text-[#1a2332] text-base">
+                            {circle.name}
+                          </p>
+                          <p className="text-xs text-neutral-400 mt-0.5">
+                            {circle.studentCount} طالب
+                          </p>
                         </div>
                       </div>
                       <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-[#D4AF37]" />
@@ -317,7 +484,10 @@ export default function StudentPlansPage() {
             <div className="bg-white rounded-2xl border border-[#D4AF37]/40 shadow-sm overflow-hidden">
               <div className="px-6 py-5 border-b border-[#D4AF37]/40 flex items-center gap-3">
                 <button
-                  onClick={() => { setSelectedCircle(null); setStudents([]) }}
+                  onClick={() => {
+                    setSelectedCircle(null);
+                    setStudents([]);
+                  }}
                   className="p-1.5 rounded-lg hover:bg-[#D4AF37]/10 transition-colors"
                 >
                   <ChevronRight className="w-4 h-4 text-[#D4AF37]" />
@@ -326,8 +496,12 @@ export default function StudentPlansPage() {
                   <Users className="w-4 h-4 text-[#D4AF37]" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-[#1a2332]">{selectedCircle}</h2>
-                  <p className="text-xs text-neutral-400">{students.length} طالب</p>
+                  <h2 className="text-base font-bold text-[#1a2332]">
+                    {selectedCircle}
+                  </h2>
+                  <p className="text-xs text-neutral-400">
+                    {students.length} طالب
+                  </p>
                 </div>
               </div>
 
@@ -338,14 +512,19 @@ export default function StudentPlansPage() {
               ) : (
                 <div className="divide-y divide-[#D4AF37]/15">
                   {students.map((student) => {
-                    const plan = studentPlans[student.id]
-                    const progress = studentProgress[student.id] || 0
+                    const plan = studentPlans[student.id];
+                    const progress = studentProgress[student.id] || 0;
                     return (
-                      <div key={student.id} className="px-6 py-4 flex items-center gap-4">
+                      <div
+                        key={student.id}
+                        className="px-6 py-4 flex items-center gap-4"
+                      >
                         {/* معلومات الطالب */}
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1">
-                            <p className="font-semibold text-[#1a2332] text-sm">{student.name}</p>
+                            <p className="font-semibold text-[#1a2332] text-sm">
+                              {student.name}
+                            </p>
                             {plan && (
                               <Badge className="text-[10px] bg-emerald-50 text-emerald-700 border border-emerald-200 px-1.5 py-0">
                                 لديه خطة
@@ -359,7 +538,8 @@ export default function StudentPlansPage() {
                                   {dailyLabel(plan.daily_pages)}
                                 </span>
                                 <p className="text-xs text-neutral-500 truncate">
-                                  {plan.start_surah_name} ← {plan.end_surah_name}
+                                  {plan.start_surah_name} ←{" "}
+                                  {plan.end_surah_name}
                                 </p>
                               </div>
                               {/* شريط التقدم */}
@@ -369,15 +549,20 @@ export default function StudentPlansPage() {
                                     className="h-full rounded-full transition-all duration-500"
                                     style={{
                                       width: `${progress}%`,
-                                      background: "linear-gradient(to right, #D4AF37, #C9A961)",
+                                      background:
+                                        "linear-gradient(to right, #D4AF37, #C9A961)",
                                     }}
                                   />
                                 </div>
-                                <span className="text-[10px] font-bold text-[#D4AF37] w-8 text-left">{progress}%</span>
+                                <span className="text-[10px] font-bold text-[#D4AF37] w-8 text-left">
+                                  {progress}%
+                                </span>
                               </div>
                             </div>
                           ) : (
-                            <p className="text-xs text-neutral-400">لا توجد خطة</p>
+                            <p className="text-xs text-neutral-400">
+                              لا توجد خطة
+                            </p>
                           )}
                         </div>
 
@@ -401,7 +586,7 @@ export default function StudentPlansPage() {
                           </button>
                         </div>
                       </div>
-                    )
+                    );
                   })}
                 </div>
               )}
@@ -412,7 +597,10 @@ export default function StudentPlansPage() {
 
       {/* نافذة إضافة الخطة */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
-        <DialogContent className="max-w-md bg-white rounded-2xl p-0 overflow-hidden [&>button]:top-4 [&>button]:right-4 [&>button]:left-auto" dir="rtl">
+        <DialogContent
+          className="max-w-md bg-white rounded-2xl p-0 overflow-hidden [&>button]:top-4 [&>button]:right-4 [&>button]:left-auto"
+          dir="rtl"
+        >
           <DialogHeader className="px-6 py-5 border-b border-[#D4AF37]/30 bg-gradient-to-r from-[#D4AF37]/8 to-transparent">
             <DialogTitle className="text-lg font-bold text-[#1a2332] flex items-center gap-2 pr-8">
               <Target className="w-5 h-5 text-[#D4AF37]" />
@@ -421,185 +609,440 @@ export default function StudentPlansPage() {
           </DialogHeader>
 
           <div className="px-6 py-5 space-y-4">
-            {/* اتجاه الخطة */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-[#1a2332]">اتجاه الحفظ</label>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setDirection("asc"); setStartSurah(""); setEndSurah("") }}
-                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                    direction === "asc"
-                      ? "bg-[#D4AF37]/10 border-[#D4AF37] text-[#C9A961]"
-                      : "border-neutral-200 text-neutral-400 hover:border-[#D4AF37]/50"
-                  }`}
-                >
-                  <span>↑</span> تصاعدي
-                </button>
-                <button
-                  type="button"
-                  onClick={() => { setDirection("desc"); setStartSurah(""); setEndSurah("") }}
-                  className={`flex items-center justify-center gap-2 py-2.5 rounded-xl border-2 text-sm font-semibold transition-all ${
-                    direction === "desc"
-                      ? "bg-[#D4AF37]/10 border-[#D4AF37] text-[#C9A961]"
-                      : "border-neutral-200 text-neutral-400 hover:border-[#D4AF37]/50"
-                  }`}
-                >
-                  <span>↓</span> تنازلي
-                </button>
-              </div>
-              <p className="text-[11px] text-neutral-400">
-                {direction === "asc" ? "الحفظ يبدأ من البقرة ← الناس" : "الحفظ يبدأ من الناس ← البقرة"}
-              </p>
+            {/* الحفظ السابق وطريقة المراجعة والربط */}
+            <div className="space-y-2 pt-2 pb-2 border-y border-[#D4AF37]/20">
+              <label className="flex items-center gap-2 text-sm font-semibold text-[#1a2332] cursor-pointer">
+                <input
+                  type="checkbox"
+                  className="rounded border-[#D4AF37] text-[#D4AF37] focus:ring-[#C9A961] accent-[#D4AF37] w-4 h-4 cursor-pointer transition-all"
+                  checked={hasPrevious}
+                  onChange={(e) => setHasPrevious(e.target.checked)}
+                />
+                هل يوجد حفظ سابق؟
+              </label>
+
+              {hasPrevious && (
+                <div className="bg-[#D4AF37]/5 p-3 rounded-xl border border-[#D4AF37]/20 space-y-3 mt-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* بداية الحفظ السابق */}
+                    <div className="space-y-1.5 flex flex-col w-full">
+                      <label className="text-xs font-semibold text-[#1a2332]">
+                        بداية الحفظ السابق
+                      </label>
+                      <div className="flex items-center gap-2 w-full">
+                        <Popover open={prevStartOpen} onOpenChange={setPrevStartOpen}>
+                          <PopoverTrigger asChild>
+                            <button className="flex-1 flex items-center justify-between px-3 h-9 rounded-lg border border-[#D4AF37]/40 text-xs bg-white text-right hover:border-[#D4AF37] transition-colors">
+                              <span className={prevStartSurah ? "text-[#1a2332] font-medium" : "text-neutral-400"}>
+                                {prevStartSurah
+                                  ? SURAHS.find((s) => s.number === parseInt(prevStartSurah))?.name
+                                  : "اختر السورة"}
+                              </span>
+                              <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-0" align="start" dir="rtl">
+                            <Command className="overflow-visible border-[#D4AF37]/20">
+                              <CommandInput placeholder="ابحث عن سورة..." className="text-xs h-8" />
+                              <CommandEmpty>لا توجد نتائج</CommandEmpty>
+                              <CommandList className="max-h-48 overflow-y-auto surah-scroll" onWheel={(e) => { e.stopPropagation(); e.currentTarget.scrollTop += e.deltaY; }}>
+                                {(direction === "asc" ? SURAHS : surahsDescending).map((s) => (
+                                  <CommandItem key={s.number} id={`prevStartSurah-${s.number}`} value={s.name} onSelect={() => { setPrevStartSurah(s.number.toString()); setPrevStartOpen(false); setPrevStartVerse(""); }}>
+                                    {s.name}
+                                    {prevStartSurah === s.number.toString() && <Check className="w-3.5 h-3.5 mr-auto text-[#D4AF37]" />}
+                                  </CommandItem>
+                                ))}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+
+                        <Select value={prevStartVerse} onValueChange={setPrevStartVerse} disabled={!prevStartSurah}>
+                          <SelectTrigger className="w-[80px] h-9 border-[#D4AF37]/40 text-xs bg-white px-2" dir="rtl">
+                            <SelectValue placeholder="الآية" />
+                          </SelectTrigger>
+                          <SelectContent dir="rtl" className="max-h-48">
+                            {prevStartSurah &&
+                              Array.from({ length: SURAHS.find(s => s.number === parseInt(prevStartSurah))?.verseCount || 0 }, (_, i) => i + 1).map((v) => (
+                                <SelectItem key={v} value={v.toString()} className="text-xs text-right">
+                                  {v}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    {/* نهاية الحفظ السابق */}
+                    <div className="space-y-1.5 flex flex-col w-full">
+                      <label className="text-xs font-semibold text-[#1a2332]">
+                        نهاية الحفظ السابق
+                      </label>
+                      <div className="flex items-center gap-2 w-full">
+                        <Popover open={prevEndOpen} onOpenChange={setPrevEndOpen}>
+                          <PopoverTrigger asChild>
+                            <button className="flex-1 flex items-center justify-between px-3 h-9 rounded-lg border border-[#D4AF37]/40 text-xs bg-white text-right hover:border-[#D4AF37] transition-colors">
+                              <span className={prevEndSurah ? "text-[#1a2332] font-medium" : "text-neutral-400"}>
+                                {prevEndSurah
+                                  ? SURAHS.find((s) => s.number === parseInt(prevEndSurah))?.name
+                                  : "اختر السورة"}
+                              </span>
+                              <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
+                            </button>
+                          </PopoverTrigger>
+                          <PopoverContent className="w-48 p-0" align="start" dir="rtl">
+                            <Command className="overflow-visible border-[#D4AF37]/20">
+                              <CommandInput placeholder="ابحث عن سورة..." className="text-xs h-8" />
+                              <CommandEmpty>لا توجد نتائج</CommandEmpty>
+                              <CommandList className="max-h-48 overflow-y-auto surah-scroll" onWheel={(e) => { e.stopPropagation(); e.currentTarget.scrollTop += e.deltaY; }}>
+                                {(direction === "asc" ? SURAHS : surahsDescending).map((s) => (
+                                  <CommandItem key={s.number} id={`prevEndSurah-${s.number}`} value={s.name} onSelect={() => { setPrevEndSurah(s.number.toString()); setPrevEndOpen(false); setPrevEndVerse(""); }}>
+                                    {s.name}
+                                    {prevEndSurah === s.number.toString() && <Check className="w-3.5 h-3.5 mr-auto text-[#D4AF37]" />}
+                                  </CommandItem>
+                                ))}
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+
+                        <Select value={prevEndVerse} onValueChange={setPrevEndVerse} disabled={!prevEndSurah}>
+                          <SelectTrigger className="w-[80px] h-9 border-[#D4AF37]/40 text-xs bg-white px-2" dir="rtl">
+                            <SelectValue placeholder="الآية" />
+                          </SelectTrigger>
+                          <SelectContent dir="rtl" className="max-h-48">
+                            {prevEndSurah &&
+                              Array.from({ length: SURAHS.find(s => s.number === parseInt(prevEndSurah))?.verseCount || 0 }, (_, i) => i + 1).map((v) => (
+                                <SelectItem key={v} value={v.toString()} className="text-xs text-right">
+                                  {v}
+                                </SelectItem>
+                              ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* بداية ونهاية الخطة — جنب بعض */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-[#1a2332]">بداية الخطة</label>
-                <Popover open={startOpen} onOpenChange={setStartOpen}>
+            {/* بداية ونهاية الخطة والمقدار اليومي */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1.5 flex flex-col w-full">
+                <label className="text-sm font-semibold text-[#1a2332]">
+                  بداية الخطة
+                </label>
+                
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Popover open={startOpen} onOpenChange={setStartOpen}>
                   <PopoverTrigger asChild>
                     <button className="w-full flex items-center justify-between px-3 h-10 rounded-xl border border-[#D4AF37]/40 text-sm bg-white text-right hover:border-[#D4AF37] transition-colors">
-                      <span className={startSurah ? "text-[#1a2332] font-medium" : "text-neutral-400"}>
-                        {startSurah ? SURAHS.find(s => s.number === parseInt(startSurah))?.name : "اختر السورة"}
+                      <span
+                        className={
+                          startSurah
+                            ? "text-[#1a2332] font-medium"
+                            : "text-neutral-400"
+                        }
+                      >
+                        {startSurah
+                          ? SURAHS.find(
+                              (s) => s.number === parseInt(startSurah),
+                            )?.name
+                          : "اختر السورة"}
                       </span>
                       <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-48 p-0" align="start" dir="rtl">
                     <Command className="overflow-visible">
-                      <CommandInput placeholder="ابحث عن سورة..." className="text-sm h-9" />
+                      <CommandInput
+                        placeholder="ابحث عن سورة..."
+                        className="text-sm h-9"
+                      />
                       <CommandEmpty>لا توجد نتائج</CommandEmpty>
-                      <CommandList className="max-h-52 overflow-y-auto surah-scroll" onWheel={(e) => { e.stopPropagation(); e.currentTarget.scrollTop += e.deltaY; }}>
-                        {(direction === "asc" ? SURAHS : surahsDescending).map((s) => (
+                      <CommandList
+                        className="max-h-52 overflow-y-auto surah-scroll"
+                        onWheel={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.scrollTop += e.deltaY;
+                        }}
+                      >
+                        {startSurahOptions.map((s) => (
                           <CommandItem
                             key={s.number}
+                            id={`start-surah-${s.number}`}
                             value={s.name}
-                            onSelect={() => { setStartSurah(String(s.number)); setEndSurah(""); setStartOpen(false) }}
+                            onSelect={() => {
+                              setStartSurah(String(s.number));
+                              setEndSurah("");
+                              setStartOpen(false);
+                            }}
                             className="flex items-center justify-between"
                           >
                             {s.name}
-                            {startSurah === String(s.number) && <Check className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                            {startSurah === String(s.number) && (
+                              <Check className="w-3.5 h-3.5 text-[#D4AF37]" />
+                            )}
                           </CommandItem>
                         ))}
                       </CommandList>
                     </Command>
                   </PopoverContent>
                 </Popover>
+                    </div>
+                    
+                      <Select value={startVerse} onValueChange={setStartVerse} disabled={!startSurah}>
+                          <SelectTrigger className="w-[80px] h-10 border-[#D4AF37]/40 hover:border-[#D4AF37] transition-colors rounded-xl bg-white text-sm" dir="rtl">
+                            <SelectValue placeholder="الآية" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-48" dir="rtl">
+                            {startSurah && Array.from({ length: SURAHS.find((s) => s.number === parseInt(startSurah))?.verseCount || 0 }, (_, i) => i + 1).map((v) => (
+                                <SelectItem key={v} value={v.toString()} className="text-right">
+                                  {v}
+                                </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                  </div>
               </div>
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-[#1a2332]">نهاية الخطة</label>
-                <Popover open={endOpen} onOpenChange={setEndOpen}>
+              <div className="space-y-1.5 flex flex-col w-full">
+                <label className="text-sm font-semibold text-[#1a2332]">
+                  نهاية الخطة
+                </label>
+                
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <Popover open={endOpen} onOpenChange={setEndOpen}>
                   <PopoverTrigger asChild>
                     <button className="w-full flex items-center justify-between px-3 h-10 rounded-xl border border-[#D4AF37]/40 text-sm bg-white text-right hover:border-[#D4AF37] transition-colors">
-                      <span className={isEndValid ? "text-[#1a2332] font-medium" : "text-neutral-400"}>
-                        {isEndValid ? SURAHS.find(s => s.number === parseInt(endSurah))?.name : "اختر السورة"}
+                      <span
+                        className={
+                          isEndValid
+                            ? "text-[#1a2332] font-medium"
+                            : "text-neutral-400"
+                        }
+                      >
+                        {isEndValid
+                          ? SURAHS.find((s) => s.number === parseInt(endSurah))
+                              ?.name
+                          : "اختر السورة"}
                       </span>
                       <ChevronDown className="w-4 h-4 text-neutral-400 shrink-0" />
                     </button>
                   </PopoverTrigger>
                   <PopoverContent className="w-48 p-0" align="start" dir="rtl">
                     <Command className="overflow-visible">
-                      <CommandInput placeholder="ابحث عن سورة..." className="text-sm h-9" />
+                      <CommandInput
+                        placeholder="ابحث عن سورة..."
+                        className="text-sm h-9"
+                      />
                       <CommandEmpty>لا توجد نتائج</CommandEmpty>
-                      <CommandList className="max-h-52 overflow-y-auto surah-scroll" onWheel={(e) => { e.stopPropagation(); e.currentTarget.scrollTop += e.deltaY; }}>
+                      <CommandList
+                        className="max-h-52 overflow-y-auto surah-scroll"
+                        onWheel={(e) => {
+                          e.stopPropagation();
+                          e.currentTarget.scrollTop += e.deltaY;
+                        }}
+                      >
                         {endSurahOptions.map((s) => (
                           <CommandItem
                             key={s.number}
+                            id={`end-surah-${s.number}`}
                             value={s.name}
-                            onSelect={() => { setEndSurah(String(s.number)); setEndOpen(false) }}
+                            onSelect={() => {
+                              setEndSurah(String(s.number));
+                              setEndOpen(false);
+                            }}
                             className="flex items-center justify-between"
                           >
                             {s.name}
-                            {endSurah === String(s.number) && <Check className="w-3.5 h-3.5 text-[#D4AF37]" />}
+                            {endSurah === String(s.number) && (
+                              <Check className="w-3.5 h-3.5 text-[#D4AF37]" />
+                            )}
                           </CommandItem>
                         ))}
                       </CommandList>
                     </Command>
                   </PopoverContent>
                 </Popover>
+                    </div>
+                    <Select value={endVerse} onValueChange={setEndVerse} disabled={!endSurah}>
+                          <SelectTrigger className="w-[80px] h-10 border-[#D4AF37]/40 hover:border-[#D4AF37] transition-colors rounded-xl bg-white text-sm" dir="rtl">
+                            <SelectValue placeholder="الآية" />
+                          </SelectTrigger>
+                          <SelectContent className="max-h-48" dir="rtl">
+                            {endSurah && Array.from({ length: SURAHS.find((s) => s.number === parseInt(endSurah))?.verseCount || 0 }, (_, i) => i + 1).map((v) => (
+                                <SelectItem key={v} value={v.toString()} className="text-right">
+                                  {v}
+                                </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select></div>
                 {startSurah && endSurahOptions.length === 0 && (
                   <p className="text-[11px] text-red-400">لا توجد سور صالحة</p>
                 )}
               </div>
-            </div>
 
-            {/* المقدار اليومي وعدد الأيام — جنب بعض */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-[#1a2332]">المقدار اليومي</label>
+            </div>
+            
+            <div className="grid md:grid-cols-2 gap-3">
+            {/* المقدار اليومي */}
+              <div className="space-y-1.5 flex flex-col w-full">
+                <label className="text-sm font-semibold text-[#1a2332]">
+                  المقدار اليومي
+                </label>
                 <Select value={dailyPages} onValueChange={setDailyPages}>
-                  <SelectTrigger className="border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl">
+                  <SelectTrigger
+                    className="border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl text-right bg-white"
+                    dir="rtl"
+                  >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent dir="rtl">
                     {DAILY_OPTIONS.map((opt) => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      <SelectItem
+                        key={opt.value}
+                        value={opt.value}
+                        className="text-right dir-rtl"
+                      >
+                        {opt.label}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            {/* مقدار المراجعة والربط - دائم الظهور */}
+            <div className="grid grid-cols-2 gap-3 mb-2 pb-2">
               <div className="space-y-1.5">
-                <label className="text-sm font-semibold text-[#1a2332]">عدد الأيام</label>
-                <input
-                  type="number"
-                  min={1}
-                  value={customDays}
-                  onChange={(e) => setCustomDays(e.target.value)}
-                  placeholder={previewDays > 0 ? String(previewDays) : "تلقائي"}
-                  className="w-full px-4 py-2.5 rounded-xl border border-[#D4AF37]/40 focus:border-[#D4AF37] focus:outline-none text-sm text-[#1a2332] placeholder-neutral-400 bg-white"
-                  dir="ltr"
-                />
+                <label className="text-sm font-semibold text-[#1a2332]">
+                  مقدار المراجعة اليومي
+                </label>
+                <Select
+                  value={muraajaaPages}
+                  onValueChange={setMuraajaaPages}
+                  dir="rtl"
+                >
+                  <SelectTrigger
+                    className="border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl text-right bg-white"
+                    dir="rtl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent dir="rtl">
+                    {MURAAJAA_OPTIONS.map((o) => (
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className="text-right dir-rtl"
+                      >
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-sm font-semibold text-[#1a2332]">
+                  مقدار الربط اليومي
+                </label>
+                <Select
+                  value={rabtPages}
+                  onValueChange={setRabtPages}
+                  dir="rtl"
+                >
+                  <SelectTrigger
+                    className="border-[#D4AF37]/40 focus:border-[#D4AF37] rounded-xl text-right bg-white"
+                    dir="rtl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent dir="rtl">
+                    {RABT_OPTIONS.map((o) => (
+                      <SelectItem
+                        key={o.value}
+                        value={o.value}
+                        className="text-right dir-rtl"
+                      >
+                        {o.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             {/* معاينة الخطة */}
-            {previewTotal > 0 && startSurah !== endSurah && (() => {
-              const startNum = parseInt(startSurah)
-              const endNum = parseInt(endSurah)
-              const actuallStartSurah = direction === "asc"
-                ? SURAHS.find((s) => s.number === Math.min(startNum, endNum))
-                : SURAHS.find((s) => s.number === Math.max(startNum, endNum))
-              const actualEndSurah = direction === "asc"
-                ? SURAHS.find((s) => s.number === Math.max(startNum, endNum))
-                : SURAHS.find((s) => s.number === Math.min(startNum, endNum))
-              return (
-                <div className="rounded-xl bg-[#D4AF37]/8 border border-[#D4AF37]/30 p-4 space-y-3">
-                  <p className="text-xs font-bold text-[#D4AF37]">معاينة الخطة</p>
-                  <div className="flex items-center gap-2 text-sm">
-                    <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold text-xs">تبدأ من</span>
-                    <span className="font-bold text-[#1a2332]">{actuallStartSurah?.name}</span>
-                    <span className="text-neutral-300">←</span>
-                    <span className="text-neutral-500 text-xs">{actualEndSurah?.name}</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="text-center">
-                      <p className="text-2xl font-black text-[#1a2332]">{previewTotal}</p>
-                      <p className="text-[11px] text-neutral-400">وجهاً إجمالاً</p>
+            {previewTotal > 0 &&
+              startSurah !== endSurah &&
+              (() => {
+                const startNum = parseInt(startSurah);
+                const endNum = parseInt(endSurah);
+                const actuallStartSurah =
+                  direction === "asc"
+                    ? SURAHS.find(
+                        (s) => s.number === Math.min(startNum, endNum),
+                      )
+                    : SURAHS.find(
+                        (s) => s.number === Math.max(startNum, endNum),
+                      );
+                const actualEndSurah =
+                  direction === "asc"
+                    ? SURAHS.find(
+                        (s) => s.number === Math.max(startNum, endNum),
+                      )
+                    : SURAHS.find(
+                        (s) => s.number === Math.min(startNum, endNum),
+                      );
+                return (
+                  <div className="rounded-xl bg-[#D4AF37]/8 border border-[#D4AF37]/30 p-4 space-y-3">
+                    <p className="text-xs font-bold text-[#D4AF37]">
+                      معاينة الخطة
+                    </p>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold text-xs">
+                        تبدأ من
+                      </span>
+                      <span className="font-bold text-[#1a2332]">
+                        {actuallStartSurah?.name}
+                      </span>
+                      <span className="text-neutral-300">←</span>
+                      <span className="text-neutral-500 text-xs">
+                        {actualEndSurah?.name}
+                      </span>
                     </div>
-                    <div className="text-center">
-                      <p className="text-2xl font-black text-[#1a2332]">
-                        {customDays && parseInt(customDays) > 0 ? parseInt(customDays) : previewDays}
-                      </p>
-                      <p className="text-[11px] text-neutral-400">
-                        يوماً
-                        {customDays && parseInt(customDays) > 0 && parseInt(customDays) !== previewDays && (
-                          <span className="text-[#D4AF37] mr-1">(مخصص)</span>
-                        )}
-                      </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="text-center">
+                        <p className="text-2xl font-black text-[#1a2332]">
+                          {previewTotal}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">
+                          وجهاً إجمالاً
+                        </p>
+                      </div>
+                      <div className="text-center">
+                        <p className="text-2xl font-black text-[#1a2332]">
+                          {previewDays}
+                        </p>
+                        <p className="text-[11px] text-neutral-400">يوماً</p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )
-            })()}
+                );
+              })()}
 
             {/* رسالة الحفظ */}
             {saveMsg && (
-              <div className={`rounded-xl px-4 py-3 text-sm font-medium ${
-                saveMsg.type === "success"
-                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                  : "bg-red-50 text-red-700 border border-red-200"
-              }`}>
+              <div
+                className={`rounded-xl px-4 py-3 text-sm font-medium ${
+                  saveMsg.type === "success"
+                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}
+              >
                 {saveMsg.text}
               </div>
             )}
@@ -627,5 +1070,5 @@ export default function StudentPlansPage() {
 
       <Footer />
     </div>
-  )
+  );
 }

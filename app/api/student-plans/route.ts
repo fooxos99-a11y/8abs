@@ -106,12 +106,21 @@ export async function POST(request: Request) {
       student_id,
       start_surah_number,
       start_surah_name,
+      start_verse,
       end_surah_number,
       end_surah_name,
+      end_verse,
       daily_pages, // 0.5 | 1 | 2
       start_date,
       direction,
       total_days: totalDaysOverride,
+      has_previous,
+      prev_start_surah,
+      prev_start_verse,
+      prev_end_surah,
+      prev_end_verse,
+      muraajaa_pages,
+      rabt_pages,
     } = body
 
     if (!student_id || !start_surah_number || !end_surah_number || !daily_pages) {
@@ -133,13 +142,22 @@ export async function POST(request: Request) {
         student_id,
         start_surah_number,
         start_surah_name,
+        start_verse: start_verse || null,
         end_surah_number,
         end_surah_name,
+        end_verse: end_verse || null,
         daily_pages,
         total_pages: totalPages,
         total_days: totalDays,
         start_date: start_date || new Date().toISOString().split("T")[0],
         direction: direction || "asc",
+        has_previous: has_previous || false,
+        prev_start_surah: prev_start_surah || null,
+        prev_start_verse: prev_start_verse || null,
+        prev_end_surah: prev_end_surah || null,
+        prev_end_verse: prev_end_verse || null,
+        muraajaa_pages: muraajaa_pages || null,
+        rabt_pages: rabt_pages || null,
       }])
       .select()
       .single()

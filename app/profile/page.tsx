@@ -9,8 +9,8 @@ import { Footer } from "@/components/footer"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { User, Trophy, Award, Calendar, Star, BarChart3, Medal, Gem, Flame, Zap, Crown, Heart, BookMarked, CheckCircle2, Clock } from "lucide-react"
-import { getSessionContent, SURAHS } from "@/lib/quran-data"
+import { User, Trophy, Award, Calendar, Star, BarChart3, Medal, Gem, Flame, Zap, Crown, Heart, BookMarked, CheckCircle2, Clock, BookOpen, Library, Check, PlayCircle, Lock } from "lucide-react"
+import { getSessionContent, getOffsetContent, SURAHS } from "@/lib/quran-data"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { ThemeSwitcher } from "@/components/theme-switcher"
@@ -412,12 +412,13 @@ function ProfilePage() {
               <div className="px-4 py-2 border-b border-[#d8a355]/20 bg-gradient-to-r from-[#d8a355]/10 to-transparent">
                 <span className="text-sm font-bold text-[#1a2332]">البيانات</span>
               </div>
-              <div className="grid grid-cols-4 divide-x divide-x-reverse divide-[#d8a355]/15 border-b border-[#d8a355]/15">
+              <div className="grid grid-cols-5 divide-x divide-x-reverse divide-[#d8a355]/15 border-b border-[#d8a355]/15">
                   {[
                     { value: "profile",      icon: <User       className="w-5 h-5" />, label: "الملف"      },
                     { value: "achievements", icon: <Award      className="w-5 h-5" />, label: "الإنجازات"  },
                     { value: "records",      icon: <BarChart3  className="w-5 h-5" />, label: "السجلات"    },
                     { value: "plan",         icon: <BookMarked className="w-5 h-5" />, label: "الخطة"      },
+                    { value: "archive",      icon: <Library className="w-5 h-5" />, label: "المحفوظ"    },
                   ].map((item) => (
                     <button
                       key={item.value}
@@ -644,9 +645,16 @@ function ProfilePage() {
                     const sessionContent = getSessionContent(planStartPage, daily, dayNum, totalPages, planDirection)
 
                     let label = ""
-                    if (daily === 0.5) {
+                    if (daily === 0.25) {
+                      const wajh = Math.ceil(dayNum / 4);
+                      const qStatus = (dayNum - 1) % 4;
+                      if (planDirection === "desc") {
+                         label = `الوجه ${wajh} — الربع ${4 - qStatus}`;
+                      } else {
+                         label = `الوجه ${wajh} — الربع ${qStatus + 1}`;
+                      }
+                    } else if (daily === 0.5) {
                       const wajh = Math.ceil(dayNum / 2)
-                      // في التنازلي: أول يوم = النصف الثاني من آخر وجه
                       if (planDirection === "desc") {
                         label = (dayNum % 2 === 1) ? `الوجه ${wajh} — النصف الثاني` : `الوجه ${wajh} — النصف الأول`
                       } else {
@@ -662,34 +670,105 @@ function ProfilePage() {
                     return { dayNum, label, sessionContent, completed }
                   })
 
+                                    const activeDayNum = Math.min(planCompletedDays + 1, totalDays);
+                  
+                  // -- NEW SMART SLIDING WINDOW LOGIC FOR MURAJAA AND RABT --
+                  let muraajaaContent = null;
+                  let rabtContent = null;
+                  
+                  const rootSurahNum = planData.prev_start_surah || planData.start_surah_number;
+                  const rootSurah = SURAHS.find(s => s.number === rootSurahNum);
+                  
+                  if (rootSurah) {
+                    const rootStartPage = rootSurah.startPage;
+                    
+                    // 1. Calculate Total Memorized Pages (TMP) up to today
+                    let prevVolume = 0;
+                    if (planData.has_previous && planData.prev_start_surah && planData.prev_end_surah) {
+                      const s1 = SURAHS.find(s => s.number === planData.prev_start_surah);
+                      const s2 = SURAHS.find(s => s.number === planData.prev_end_surah);
+                      if (s1 && s2) {
+                        const startP = s1.startPage;
+                        let endP = 605;
+                        if (s2.number < 114) {
+                          const nextS = SURAHS.find(x => x.number === s2.number + 1);
+                          if (nextS) endP = nextS.startPage;
+                        }
+                        prevVolume = Math.abs(endP - startP);
+                      }
+                    }
+                    
+                    const completedCurrentPlanPages = (activeDayNum - 1) * planData.daily_pages;
+                    const tmp = prevVolume + completedCurrentPlanPages;
+                    
+                    if (tmp > 0) {
+                      // 2. Rabt takes from the leading edge (up to its limit)
+                      const rabtPref = Number(planData.rabt_pages) || 0;
+                      const rabtSize = Math.min(rabtPref, tmp);
+                      if (rabtSize > 0) {
+                        const rabtOffset = tmp - rabtSize; // always the leading sequence
+                        rabtContent = getOffsetContent(rootStartPage, rabtOffset, rabtSize, 0, planDirection);
+                      }
+
+                      // 3. Muraajaa slides through the remaining pool
+                      const poolMuraajaa = tmp - rabtSize;
+                      const muraajaaPref = Number(planData.muraajaa_pages) || 0;
+                      if (poolMuraajaa > 0 && muraajaaPref > 0) {
+                        // Slide the offset across the pool
+                        let baseOffset = ((activeDayNum - 1) * muraajaaPref) % poolMuraajaa;
+                        const mSize = Math.min(muraajaaPref, poolMuraajaa - baseOffset);
+                        if (mSize > 0) {
+                          muraajaaContent = getOffsetContent(rootStartPage, baseOffset, mSize, 0, planDirection);
+                        }
+                      }
+                    }
+                  }
+
                   return (
                     <>
-                      {/* رأس الخطة: النص + مربعَي الإجمالي والمتبقي */}
-                      <div className="bg-white rounded-2xl border-2 px-4 py-4 shadow-sm flex items-center gap-3" style={{ borderColor: "#d8a35530" }}>
-                        <div className="flex-1 min-w-0">
+                      {/* رأس الخطة: النص + مربعَي المراجعة والربط */}
+                      <div className="bg-white rounded-2xl border-2 px-4 py-4 shadow-sm flex flex-row-reverse items-center justify-between gap-3" style={{ borderColor: "#d8a35530" }}>
+                        <div className="flex-1 min-w-0 text-right">
                           <p className="text-[11px] text-[#c99347]/70 font-semibold mb-0.5">خطة الحفظ</p>
                           <p className="text-base font-black text-[#1a2332] leading-snug">
                             من سورة {planDirection === "asc" ? planData.start_surah_name : planData.end_surah_name} إلى سورة {planDirection === "asc" ? planData.end_surah_name : planData.start_surah_name}
                           </p>
-                          <p className="text-[11px] text-neutral-400 mt-0.5">{planData.daily_pages === 0.5 ? "نصف وجه يومياً" : planData.daily_pages === 1 ? "وجه يومياً" : "وجهان يومياً"}</p>
+                          <p className="text-[11px] text-neutral-400 mt-0.5">{planData.daily_pages === 0.25 ? "ربع وجه يومياً" : planData.daily_pages === 0.5 ? "نصف وجه يومياً" : planData.daily_pages === 1 ? "وجه يومياً" : "وجهان يومياً"}</p>
                         </div>
-                        <div className="flex gap-2 shrink-0">
-                          <div className="text-center bg-[#d8a355]/8 border border-[#d8a355]/25 rounded-xl px-3 py-2 min-w-[56px]">
-                            <p className="text-lg font-black text-[#c99347]">{totalDays}</p>
-                            <p className="text-[9px] text-neutral-400 font-semibold">الإجمالي</p>
-                          </div>
-                          <div className="text-center bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2 min-w-[56px]">
-                            <p className="text-lg font-black text-emerald-600">{totalDays - planCompletedDays}</p>
-                            <p className="text-[9px] text-neutral-400 font-semibold">المتبقي</p>
-                          </div>
-                        </div>
+                        {(() => {
+                          const todayDateStr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" })).toISOString().split("T")[0];
+                          const todayRecord = attendanceRecords.find(r => r.date === todayDateStr);
+                          const isMuraajaaCompleted = todayRecord?.status === "present" && todayRecord?.samaa_level && todayRecord?.samaa_level !== "not_completed";
+                          const isRabtCompleted = todayRecord?.status === "present" && todayRecord?.rabet_level && todayRecord?.rabet_level !== "not_completed";
+
+                          return (muraajaaContent || rabtContent) ? (
+                            <div className="flex flex-row-reverse gap-2 shrink-0 max-w-[55%]">
+                              {rabtContent && (
+                                <div className={`flex flex-col relative items-center justify-center text-center border rounded-xl px-3 py-2 min-w-[75px] transition-all ${isRabtCompleted ? "bg-emerald-50 border-emerald-200" : "bg-blue-50/50 border-blue-200/50"}`}>
+                                  {isRabtCompleted && <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 rounded-full p-0.5 shadow-sm"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
+                                  <p className={`text-[9px] font-bold mb-0.5 ${isRabtCompleted ? "text-emerald-700" : "text-blue-600/70"}`}>ربط اليوم</p>
+                                  <p className="text-[11px] font-bold text-slate-800 line-clamp-1" dir="rtl">{rabtContent.text}</p>
+                                  <span className={`text-[8px] font-medium mt-1 px-1.5 py-[1px] rounded-md ${isRabtCompleted ? "bg-emerald-100/50 text-emerald-600" : "bg-neutral-100 text-neutral-400"}`}>{isRabtCompleted ? "مكتمل" : "لم يُنجز بعد"}</span>
+                                </div>
+                              )}
+                              {muraajaaContent && (
+                                <div className={`flex flex-col relative items-center justify-center text-center border rounded-xl px-3 py-2 min-w-[75px] transition-all ${isMuraajaaCompleted ? "bg-emerald-50 border-emerald-200" : "bg-purple-50/50 border-purple-200/50"}`}>
+                                  {isMuraajaaCompleted && <div className="absolute -top-1.5 -right-1.5 bg-emerald-500 rounded-full p-0.5 shadow-sm"><CheckCircle2 className="w-3 h-3 text-white" /></div>}
+                                  <p className={`text-[9px] font-bold mb-0.5 ${isMuraajaaCompleted ? "text-emerald-700" : "text-purple-600/70"}`}>مراجعة اليوم</p>
+                                  <p className="text-[11px] font-bold text-slate-800 line-clamp-1" dir="rtl">{muraajaaContent.text}</p>
+                                  <span className={`text-[8px] font-medium mt-1 px-1.5 py-[1px] rounded-md ${isMuraajaaCompleted ? "bg-emerald-100/50 text-emerald-600" : "bg-neutral-100 text-neutral-400"}`}>{isMuraajaaCompleted ? "مكتمل" : "لم يُنجز بعد"}</span>
+                                </div>
+                              )}
+                            </div>
+                          ) : null;
+                        })()}
                       </div>
 
                       {/* الجدول الزمني لكل الأيام */}
                       <div className="bg-white rounded-2xl border-2 overflow-hidden" style={{ borderColor: "#d8a35526" }}>
                         <div className="px-5 py-4 border-b border-[#d8a355]/20 flex items-center justify-between">
                           <h4 className="font-bold text-[#1a2332]">جدول الخطة</h4>
-                          <span className="text-xs text-neutral-400">{planData.daily_pages === 0.5 ? "نصف وجه يومياً" : planData.daily_pages === 1 ? "وجه يومياً" : "وجهان يومياً"}</span>
+                          <span className="text-xs text-neutral-400">{planData.daily_pages === 0.25 ? "ربع وجه يومياً" : planData.daily_pages === 0.5 ? "نصف وجه يومياً" : planData.daily_pages === 1 ? "وجه يومياً" : "وجهان يومياً"}</span>
                         </div>
                         <div className="relative">
                           {/* خط التسلسل */}
@@ -753,6 +832,58 @@ function ProfilePage() {
                   )
                 })()}
               </TabsContent>
+              
+              <TabsContent value="archive" className="space-y-4 md:space-y-6">
+                <Card className="rounded-none border-0 shadow-none">
+                  <CardHeader className="bg-white p-4 md:p-6">
+                    <CardTitle className="text-xl md:text-2xl text-[#1a2332]">السجل الشامل للمحفوظ</CardTitle>
+                    <CardDescription className="text-[#1a2332]/60">يحتوي على الأجزاء التي تم إتمامها والتي يتم دراستها حالياً</CardDescription>
+                  </CardHeader>
+                  <CardContent className="pt-2 md:pt-3 space-y-4 md:space-y-6">
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
+                      {Array.from({ length: 30 }, (_, i) => i + 1).map((juzNum) => {
+                        const isCompleted = studentData?.completed_juzs?.includes(juzNum);
+                        const isCurrent = studentData?.current_juzs?.includes(juzNum);
+                        
+                        let bgColor = "bg-white";
+                        let borderColor = "border-[#d8a355]/20";
+                        let textColor = "text-[#1a2332]/50";
+                        let Icon = BookOpen;
+                        let statusText = "غير محفوظ";
+
+                        if (isCompleted) {
+                          bgColor = "bg-[#d8a355]/10";
+                          borderColor = "border-[#d8a355]";
+                          textColor = "text-[#d8a355]";
+                          Icon = CheckCircle2;
+                          statusText = "مكتمل";
+                        } else if (isCurrent) {
+                          bgColor = "bg-[#1a2332]/5";
+                          borderColor = "border-[#1a2332]/30";
+                          textColor = "text-[#1a2332]";
+                          Icon = PlayCircle;
+                          statusText = "قيد الحفظ";
+                        }
+
+                        return (
+                          <div key={juzNum} className={`relative flex flex-col items-center justify-center p-3 rounded-xl border ${borderColor} ${bgColor} transition-all hover:scale-105`}>
+                            <div className="absolute top-2 right-2">
+                              {isCompleted && <CheckCircle2 className="w-4 h-4 text-[#d8a355]" />}
+                              {isCurrent && <PlayCircle className="w-4 h-4 text-[#1a2332]" />}
+                            </div>
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${isCompleted ? 'bg-[#d8a355]/20' : (isCurrent ? 'bg-[#1a2332]/10' : 'bg-gray-100')}`}>
+                              <span className={`text-lg font-bold ${textColor}`}>{juzNum}</span>
+                            </div>
+                            <span className={`text-xs font-bold ${textColor}`}>الجزء {juzNum}</span>
+                            <span className="text-[10px] text-gray-500 mt-1">{statusText}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
               </Tabs>
             </div>
           </div>
