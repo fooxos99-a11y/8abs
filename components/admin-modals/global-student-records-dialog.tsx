@@ -1,7 +1,7 @@
 ﻿
 "use client"
 
-import React, { useEffect, useState } from "react"
+import React, { useEffect, useState, Suspense } from 'react'
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -76,7 +76,7 @@ export function GlobalStudentRecordsDialog() {
     if (!open) {
       setIsOpen(false)
       setTimeout(() => {
-        router.push("?")
+        router.push(String.fromCharCode(63))
       }, 300)
     }
   }

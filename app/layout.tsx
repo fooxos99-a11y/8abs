@@ -3,6 +3,7 @@ import type { Metadata } from "next"
 import { Geist, Cairo } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { ConfirmDialogProvider } from "@/hooks/use-confirm-dialog"
+import { GlobalAdminModals } from '@/components/global-admin-modals'
 import { Toaster } from "@/components/ui/toaster"
 import "./globals.css"
 
@@ -27,6 +28,7 @@ export default function RootLayout({
       </head>
       <body className={`${cairo.className} antialiased`} suppressHydrationWarning>
         <ConfirmDialogProvider>{children}</ConfirmDialogProvider>
+        <GlobalAdminModals />
         <Toaster />
         <Analytics />
       </body>

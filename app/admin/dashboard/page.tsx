@@ -208,7 +208,6 @@ function AdminDashboard() {
       if (action === "transfer-student") setIsMoveStudentDialogOpen(true)
       if (action === "edit-student") setIsEditStudentDialogOpen(true)
       if (action === "edit-points") setIsEditPointsDialogOpen(true)
-      if (action === "student-records") setIsStudentRecordsDialogOpen(true)
     }
   }, [searchParams])
 
@@ -971,7 +970,6 @@ function AdminDashboard() {
 
   const handleOpenRecordsDialog = () => {
     setIsStudentManagementDialogOpen(false)
-    setIsStudentRecordsDialogOpen(true)
   }
 
   if (isLoading) {
