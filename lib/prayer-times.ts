@@ -9,8 +9,9 @@ const RIYADH_TIMEZONE = "Asia/Riyadh"
 const DEFAULT_ASR_GRACE_MINUTES = 50
 const DAILY_PRAYER_TIMES_TABLE = "daily_prayer_times"
 const ASR_PRAYER_NAME = "asr"
+const CURRENT_DAY_CACHE_TTL_MS = 15 * 60 * 1000
 
-const dailyAsrCache = new Map<string, Promise<string | null>>()
+const dailyAsrCache = new Map<string, { promise: Promise<string | null>; expiresAt: number }>()
 
 function parseClockToMinutes(clock: string) {
 	const [hours, minutes] = clock.split(" ")[0].split(":").map(Number)
@@ -60,6 +61,19 @@ function formatMinutes(minutes: number) {
 	const hours = Math.floor(normalizedMinutes / 60)
 	const mins = normalizedMinutes % 60
 	return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`
+}
+
+function getSaudiDateString(date = new Date()) {
+	return new Intl.DateTimeFormat("en-CA", {
+		timeZone: RIYADH_TIMEZONE,
+		year: "numeric",
+		month: "2-digit",
+		day: "2-digit",
+	}).format(date)
+}
+
+function isCurrentSaudiDate(attendanceDate: string) {
+	return attendanceDate === getSaudiDateString()
 }
 
 function getRiyadhTimeParts(timestamp: string) {
@@ -123,46 +137,63 @@ async function storeBuraidahAsrTime(attendanceDate: string, prayerTime: string) 
 }
 
 export async function getBuraidahAsrTime(attendanceDate: string) {
-	if (!dailyAsrCache.has(attendanceDate)) {
-		dailyAsrCache.set(
-			attendanceDate,
-			(async () => {
-				const storedAsrTime = await getStoredBuraidahAsrTime(attendanceDate)
-				if (storedAsrTime) {
-					return storedAsrTime
-				}
+	const isToday = isCurrentSaudiDate(attendanceDate)
+	const cachedEntry = dailyAsrCache.get(attendanceDate)
 
-				const url = new URL(`${ALMOSALY_BASE_URL}/home/getMawaquit`)
-				url.searchParams.set("lat", BURAIDAH_LATITUDE)
-				url.searchParams.set("lon", BURAIDAH_LONGITUDE)
-				url.searchParams.set("id", BURAIDAH_CITY_ID)
-				url.searchParams.set("date", attendanceDate)
-
-				const response = await fetch(url.toString(), {
-					headers: {
-						"User-Agent": "Mozilla/5.0",
-						"X-Requested-With": "XMLHttpRequest",
-					},
-					next: { revalidate: 43200 },
-				})
-
-				if (!response.ok) {
-					throw new Error(`Failed to fetch Almosaly prayer times: ${response.status}`)
-				}
-
-				const html = await response.text()
-				const asrTime = extractAsrTimeFromHtml(html)
-
-				if (asrTime) {
-					await storeBuraidahAsrTime(attendanceDate, asrTime)
-				}
-
-				return asrTime
-			})(),
-		)
+	if (cachedEntry && cachedEntry.expiresAt > Date.now()) {
+		return cachedEntry.promise
 	}
 
-	return dailyAsrCache.get(attendanceDate)!
+	const promise = (async () => {
+		const storedAsrTime = await getStoredBuraidahAsrTime(attendanceDate)
+		if (storedAsrTime && !isToday) {
+			return storedAsrTime
+		}
+
+		const url = new URL(`${ALMOSALY_BASE_URL}/home/getMawaquit`)
+		url.searchParams.set("lat", BURAIDAH_LATITUDE)
+		url.searchParams.set("lon", BURAIDAH_LONGITUDE)
+		url.searchParams.set("id", BURAIDAH_CITY_ID)
+		url.searchParams.set("date", attendanceDate)
+
+		try {
+			const response = await fetch(url.toString(), {
+				headers: {
+					"User-Agent": "Mozilla/5.0",
+					"X-Requested-With": "XMLHttpRequest",
+				},
+				...(isToday ? { cache: "no-store" as const } : { next: { revalidate: 43200 } }),
+			})
+
+			if (!response.ok) {
+				throw new Error(`Failed to fetch Almosaly prayer times: ${response.status}`)
+			}
+
+			const html = await response.text()
+			const asrTime = extractAsrTimeFromHtml(html)
+
+			if (asrTime) {
+				if (asrTime !== storedAsrTime) {
+					await storeBuraidahAsrTime(attendanceDate, asrTime)
+				}
+				return asrTime
+			}
+		} catch {
+			if (storedAsrTime) {
+				return storedAsrTime
+			}
+			throw new Error(`Failed to fetch Almosaly prayer times for ${attendanceDate}`)
+		}
+
+		return storedAsrTime
+	})()
+
+	dailyAsrCache.set(attendanceDate, {
+		promise,
+		expiresAt: isToday ? Date.now() + CURRENT_DAY_CACHE_TTL_MS : Number.POSITIVE_INFINITY,
+	})
+
+	return promise
 }
 
 export interface TeacherAttendanceTimingStatus {

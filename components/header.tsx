@@ -39,6 +39,7 @@ import {
   Phone,
   Banknote,
   BarChart3,
+  Lock,
   Trash2,
   BookMarked,
 } from "lucide-react";
@@ -80,6 +81,8 @@ function NavItem({
   gold,
 
   indent,
+
+  disabled,
 }: {
   icon: React.ElementType;
 
@@ -90,23 +93,34 @@ function NavItem({
   gold?: boolean;
 
   indent?: boolean;
+
+  disabled?: boolean;
 }) {
   return (
     <button
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
       className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 group relative cursor-pointer
 
         ${indent ? "pr-8" : ""}
 
-        ${gold ? "text-[#b5862c] hover:bg-[#d8a355]/12" : "text-[#1a2e2b] hover:bg-[#00312e]/7"}`}
+        ${disabled ? "cursor-not-allowed opacity-45" : "cursor-pointer"}
+
+        ${gold ? "text-[#b5862c] hover:bg-[#d8a355]/12" : "text-[#1a2e2b] hover:bg-[#00312e]/7"}
+
+        ${disabled ? "hover:bg-transparent" : ""}`}
     >
       <Icon
         size={17}
         className={`flex-shrink-0 transition-all duration-200 group-hover:scale-110
-          ${gold ? "text-[#d8a355]" : "text-[#00312e]/50 group-hover:text-[#00312e]/80"}`}
+          ${gold ? "text-[#d8a355]" : "text-[#00312e]/50 group-hover:text-[#00312e]/80"}
+          ${disabled ? "group-hover:scale-100 group-hover:text-inherit" : ""}`}
       />
 
       <span className="flex-1 text-right leading-tight">{label}</span>
+
+      {disabled && <Lock size={14} className="flex-shrink-0 text-[#00312e]/45" />}
     </button>
   );
 }
@@ -1531,6 +1545,7 @@ export function Header() {
                       icon={Ic}
                       label={label}
                       onClick={() => handleNav(path)}
+                      disabled={label === "المالية" || label === "الإحصائيات"}
                       indent
                     />
                   ))}
