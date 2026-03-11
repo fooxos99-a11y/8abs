@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
 import { SiteLoader } from "@/components/ui/site-loader"
-import { getAyahByPageFloat, getInclusiveEndAyah, SURAHS } from "@/lib/quran-data"
+import { getActivePlanDayNumber, getAyahByPageFloat, getInclusiveEndAyah, getPlanSessionContent, SURAHS } from "@/lib/quran-data"
 import { type AttendanceStatus, isEvaluatedAttendance, isNonEvaluatedAttendance } from "@/lib/student-attendance"
 
 type EvaluationLevel = "excellent" | "very_good" | "good" | "not_completed" | null
@@ -170,9 +170,9 @@ const getPlanReadingDetails = (plan: StudentPlan | null, completedDays: number):
 	const direction = plan.direction || "asc"
 	const startSurahData = SURAHS.find((surah) => surah.number === Math.min(plan.start_surah_number, plan.end_surah_number))
 	const planStartPage = startSurahData?.startPage || 1
-	const activeDayNum = Math.max(1, Math.min(completedDays + 1, totalDays || 1))
+	const activeDayNum = getActivePlanDayNumber(totalDays, completedDays, plan.start_date, plan.created_at)
 
-	const hafiz = getSessionReadingContent(planStartPage, daily, activeDayNum, totalPages, direction)
+	const hafiz = getPlanSessionContent(plan, activeDayNum)
 
 	let samaa: EvaluationContent | null = null
 	let rabet: EvaluationContent | null = null
@@ -1108,12 +1108,12 @@ export default function HalaqahManagement() {
 																</Button>
 															</div>
                                                                                                                 </div>
-														<div className="flex flex-row gap-2 w-full">
+														<div className="grid grid-cols-2 gap-2 w-full">
 															<Button
 																variant="outline"
 																onClick={() => toggleAttendance(student.id, "present")}
 																disabled={student.savedToday}
-																className={`flex-1 text-sm h-9 rounded-lg transition-all ${
+																className={`min-w-0 text-sm h-9 rounded-lg transition-all ${
 																	student.attendance === "present"
 																		? "font-bold"
 																		: "border-[#D4AF37]/80 text-neutral-600 hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]"
@@ -1130,7 +1130,7 @@ export default function HalaqahManagement() {
 																variant="outline"
 																onClick={() => toggleAttendance(student.id, "late")}
 																disabled={student.savedToday}
-																className={`flex-1 text-sm h-9 rounded-lg transition-all ${
+																className={`min-w-0 text-sm h-9 rounded-lg transition-all ${
 																	student.attendance === "late"
 																		? "font-bold"
 																		: "border-[#D4AF37]/80 text-neutral-600 hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]"
@@ -1147,7 +1147,7 @@ export default function HalaqahManagement() {
 																variant="outline"
 																onClick={() => toggleAttendance(student.id, "absent")}
 																disabled={student.savedToday}
-																className={`flex-1 text-sm h-9 rounded-lg transition-all ${
+																className={`min-w-0 text-sm h-9 rounded-lg transition-all ${
 																	student.attendance === "absent"
 																		? "font-bold"
 																		: "border-[#D4AF37]/80 text-neutral-600 hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]"
@@ -1164,7 +1164,7 @@ export default function HalaqahManagement() {
 																variant="outline"
 																onClick={() => toggleAttendance(student.id, "excused")}
 																disabled={student.savedToday}
-																className={`flex-1 text-sm h-9 rounded-lg transition-all ${
+																className={`min-w-0 text-sm h-9 rounded-lg transition-all ${
 																	student.attendance === "excused"
 																		? "font-bold"
 																		: "border-[#D4AF37]/80 text-neutral-600 hover:bg-[#D4AF37]/10 hover:border-[#D4AF37]"

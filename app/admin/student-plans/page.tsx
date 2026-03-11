@@ -54,6 +54,7 @@ import {
   calculateTotalPages,
   calculateTotalDays,
 } from "@/lib/quran-data";
+import { getSaudiDateString } from "@/lib/saudi-time";
 
 interface Circle {
   id: string;
@@ -107,7 +108,7 @@ const RABT_OPTIONS = [
 ];
 
 const DAILY_OPTIONS = [
-  { value: "0.25", label: "ربع وجه (حوالي 4 أسطر)" },
+  { value: "0.25", label: "ربع وجه" },
   { value: "0.5", label: "نصف وجه" },
   { value: "1", label: "وجه واحد" },
   { value: "2", label: "وجهان" },
@@ -119,6 +120,38 @@ function dailyLabel(v: number) {
   if (v === 1) return "وجه واحد";
   if (v === 2) return "وجهان";
   return `${v} وجه`;
+}
+
+function getPreferredEndSurah(
+  options: typeof SURAHS,
+  selectedStartSurah: number,
+  preferredDirection: "asc" | "desc",
+) {
+  const optionNumbers = new Set(options.map((surah) => surah.number));
+  const preferredCandidate = preferredDirection === "desc" ? selectedStartSurah - 1 : selectedStartSurah + 1;
+  if (optionNumbers.has(preferredCandidate)) {
+    return preferredCandidate;
+  }
+
+  const fallbackCandidate = preferredDirection === "desc" ? selectedStartSurah + 1 : selectedStartSurah - 1;
+  if (optionNumbers.has(fallbackCandidate)) {
+    return fallbackCandidate;
+  }
+
+  const nearest = options
+    .filter((surah) => surah.number !== selectedStartSurah)
+    .sort((left, right) => Math.abs(left.number - selectedStartSurah) - Math.abs(right.number - selectedStartSurah))[0];
+
+  return nearest?.number ?? selectedStartSurah;
+}
+
+function rotateSurahOptions(options: typeof SURAHS, anchorSurahNumber?: number | null) {
+  if (!anchorSurahNumber) return options;
+
+  const anchorIndex = options.findIndex((surah) => surah.number === anchorSurahNumber);
+  if (anchorIndex <= 0) return options;
+
+  return [...options.slice(anchorIndex), ...options.slice(0, anchorIndex)];
 }
 
 function getNextStartFromPrevious(
@@ -437,7 +470,7 @@ export default function StudentPlansPage() {
             hasPrevious && prevEndVerse ? parseInt(prevEndVerse) : null,
           muraajaa_pages: parseFloat(muraajaaPages),
           rabt_pages: parseFloat(rabtPages),
-          start_date: new Date().toISOString().split("T")[0],
+          start_date: getSaudiDateString(),
         }),
       });
       const data = await res.json();
@@ -546,7 +579,18 @@ export default function StudentPlansPage() {
   // قائمة السور المتاحة لنهاية الخطة
   const endSurahOptions = (() => {
     if (!startNum) return startSurahOptions;
-    return startSurahOptions;
+
+    const preferredDirection = endNum
+      ? direction
+      : hasPrevious && prevStartSurah && prevEndSurah && parseInt(prevStartSurah, 10) > parseInt(prevEndSurah, 10)
+        ? "desc"
+        : "asc";
+
+    const orderedOptions = preferredDirection === "desc"
+      ? startSurahOptions.slice().sort((left, right) => right.number - left.number)
+      : startSurahOptions.slice().sort((left, right) => left.number - right.number);
+
+    return rotateSurahOptions(orderedOptions, endNum ?? startNum);
   })();
 
   const endVerseOptions = (() => {
@@ -649,15 +693,36 @@ export default function StudentPlansPage() {
   }, [hasPrevious, prevStartSurah, prevEndSurah, prevEndVerse]);
 
   useEffect(() => {
+    if (!startNum) return;
+
+    const preferredDirection = hasPrevious && prevStartSurah && prevEndSurah && parseInt(prevStartSurah, 10) > parseInt(prevEndSurah, 10)
+      ? "desc"
+      : "asc";
+
+    const autoEndSurah = String(getPreferredEndSurah(startSurahOptions, startNum, preferredDirection));
+    if (!endSurah || !endSurahOptions.some((surah) => surah.number === parseInt(endSurah, 10))) {
+      setEndSurah(autoEndSurah);
+    }
+  }, [endSurah, endSurahOptions, hasPrevious, prevEndSurah, prevStartSurah, startNum, startSurahOptions]);
+
+  useEffect(() => {
     if (!startVerseOptions.length) {
       if (startVerse) setStartVerse("");
       return;
     }
 
-    if (!startVerse || !startVerseOptions.includes(parseInt(startVerse, 10))) {
-      setStartVerse(String(startVerseOptions[0]));
+    if (hasPrevious && nextStartFromPrevious && startNum === nextStartFromPrevious.surahNumber) {
+      const expectedStartVerse = String(nextStartFromPrevious.verseNumber);
+      if (startVerse !== expectedStartVerse) {
+        setStartVerse(expectedStartVerse);
+      }
+      return;
     }
-  }, [startVerse, startVerseOptions]);
+
+    if (startVerse && !startVerseOptions.includes(parseInt(startVerse, 10))) {
+      setStartVerse("");
+    }
+  }, [hasPrevious, nextStartFromPrevious, startNum, startVerse, startVerseOptions]);
 
   useEffect(() => {
     if (!prevStartVerseOptions.length) {
@@ -676,8 +741,8 @@ export default function StudentPlansPage() {
       return;
     }
 
-    if (!endVerse || !endVerseOptions.includes(parseInt(endVerse, 10))) {
-      setEndVerse(String(endVerseOptions[endVerseOptions.length - 1]));
+    if (endVerse && !endVerseOptions.includes(parseInt(endVerse, 10))) {
+      setEndVerse("");
     }
   }, [endVerse, endVerseOptions]);
 
@@ -1055,7 +1120,6 @@ export default function StudentPlansPage() {
                             value={s.name}
                             onSelect={() => {
                               setStartSurah(String(s.number));
-                              setEndSurah("");
                               setStartOpen(false);
                             }}
                             className="flex items-center justify-between"

@@ -503,6 +503,12 @@
 }
 
 /* Surah combobox scrollbar */
+.surah-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
 .surah-scroll::-webkit-scrollbar {
   width: 2px;
 }

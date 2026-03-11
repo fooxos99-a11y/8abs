@@ -916,7 +916,7 @@ export function Header() {
             />
           </div>
 
-          <div className="z-20 flex items-center gap-2 min-w-[40px] justify-end">
+          <div className="absolute left-4 top-1/2 z-20 flex -translate-y-1/2 items-center gap-2">
             {isLoggedIn && userRole !== "student" && (
               <DropdownMenu onOpenChange={async (open) => {
                 if (!open) return;
@@ -947,7 +947,7 @@ export function Header() {
               }}>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="fixed left-4 top-4 z-[70] flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0b4b4b]/95 shadow-[0_12px_30px_rgba(3,36,36,0.28)] backdrop-blur-sm transition-colors hover:bg-[#0f5c5c]"
+                    className="relative flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-[#0b4b4b]/95 shadow-[0_12px_30px_rgba(3,36,36,0.28)] backdrop-blur-sm transition-colors hover:bg-[#0f5c5c]"
                     aria-label="الإشعارات"
                   >
                     <Bell size={22} className="text-white" />
@@ -1027,7 +1027,7 @@ export function Header() {
             {authResolved && !isLoggedIn && (
               <Button
                 onClick={() => handleNav("/login")}
-                className="bg-[#d8a355] hover:bg-[#c99347] text-[#00312e] font-extrabold rounded-lg px-5 h-9 text-sm"
+                className="bg-[#d8a355] hover:bg-[#c99347] text-[#00312e] font-extrabold rounded-lg px-5 h-10 text-sm shadow-[0_12px_30px_rgba(3,36,36,0.28)]"
               >
                 دخول
               </Button>
@@ -1113,7 +1113,7 @@ export function Header() {
                 {userRole === "teacher" && (
                   <NavItem
                     icon={BookMarked}
-                    label="خطة الطلاب"
+                    label="خطط الطلاب"
                     onClick={() => handleNav("/teacher/student-plans")}
                   />
                 )}

@@ -1,4 +1,5 @@
 import { PAGE_REFERENCES } from './quran-pages';
+import { getSaudiDateString } from './saudi-time';
 // بيانات القرآن الكريم - المصحف الشريف (مصحف المدينة المنورة)
 // كل وجه = صفحة واحدة، المصحف = 604 صفحة
 
@@ -493,6 +494,7 @@ export function getAyahByPageFloat(p: number): { surah: number; ayah: number; cu
 
 export function getInclusiveEndAyah(p: number) {
   if (!Number.isFinite(p) || p <= 1) return { surah: 1, ayah: 1 }
+  if (p >= 605) return { surah: 114, ayah: 6 }
   const next = getAyahByPageFloat(p);
   if (next.surah === 114 && next.ayah === 7) return { surah: 114, ayah: 6 };
   if (next.ayah > 1) {
@@ -535,6 +537,147 @@ export function getSessionContent(
     fromSurah: startSurahName,
     toSurah: endSurahName,
   };
+}
+
+interface AyahReference {
+  surah: number
+  ayah: number
+}
+
+export interface PlanSessionContent {
+  text: string
+  fromSurah: string
+  fromVerse: string
+  toSurah: string
+  toVerse: string
+}
+
+export interface SessionPlanBounds {
+  start_surah_number: number
+  start_verse?: number | null
+  end_surah_number: number
+  end_verse?: number | null
+  total_pages: number
+  daily_pages: number
+  direction?: "asc" | "desc" | null
+  start_date?: string | null
+  created_at?: string | null
+}
+
+export function getDisplayCompletedDays(completedDays: number, startDate?: string | null) {
+  const safeCompletedDays = Math.max(0, Math.floor(Number(completedDays) || 0))
+
+  if (startDate && startDate === getSaudiDateString() && safeCompletedDays > 0) {
+    return safeCompletedDays - 1
+  }
+
+  return safeCompletedDays
+}
+
+export function getActivePlanDayNumber(totalDays: number, completedDays: number, startDate?: string | null, createdAt?: string | null) {
+  const normalizedTotalDays = Math.max(1, Math.floor(Number(totalDays) || 1))
+  const createdTodaySaudi = createdAt
+    ? getSaudiDateString(new Date(createdAt)) === getSaudiDateString()
+    : false
+  const adjustedCompletedDays = createdTodaySaudi && Math.max(0, Math.floor(Number(completedDays) || 0)) > 0
+    ? Math.max(0, Math.floor(Number(completedDays) || 0) - 1)
+    : completedDays
+  const displayCompletedDays = getDisplayCompletedDays(adjustedCompletedDays, startDate)
+  return Math.max(1, Math.min(displayCompletedDays + 1, normalizedTotalDays))
+}
+
+function formatPlanSessionContent(fromRef: AyahReference, toRef: AyahReference): PlanSessionContent | null {
+  const fromSurah = SURAHS.find((surah) => surah.number === fromRef.surah)
+  const toSurah = SURAHS.find((surah) => surah.number === toRef.surah)
+
+  if (!fromSurah || !toSurah) return null
+
+  const text = fromRef.surah === toRef.surah && fromRef.ayah === toRef.ayah
+    ? `${fromSurah.name} ${fromRef.ayah}`
+    : `${fromSurah.name} ${fromRef.ayah} - ${toSurah.name} ${toRef.ayah}`
+
+  return {
+    text,
+    fromSurah: fromSurah.name,
+    fromVerse: String(fromRef.ayah),
+    toSurah: toSurah.name,
+    toVerse: String(toRef.ayah),
+  }
+}
+
+function normalizeDescendingTopBoundaryRef(ref: AyahReference) {
+  if (ref.ayah !== 1) {
+    return ref
+  }
+
+  const surah = SURAHS.find((item) => item.number === ref.surah)
+  if (!surah) {
+    return ref
+  }
+
+  return {
+    surah: ref.surah,
+    ayah: surah.verseCount,
+  }
+}
+
+export function getPlanStartPage(plan: Pick<SessionPlanBounds, "start_surah_number" | "start_verse" | "end_surah_number" | "direction">) {
+  const direction = plan.direction === "desc" ? "desc" : "asc"
+
+  if (direction === "desc") {
+    return SURAHS.find((surah) => surah.number === Math.min(plan.start_surah_number, plan.end_surah_number))?.startPage || 1
+  }
+
+  return getPageForAyah(plan.start_surah_number, Number(plan.start_verse) || 1)
+}
+
+export function getPlanSessionContent(plan: SessionPlanBounds, sessionNum: number): PlanSessionContent | null {
+  const dailyPages = Number(plan.daily_pages) || 0
+  const totalPages = Number(plan.total_pages) || 0
+  const direction = plan.direction === "desc" ? "desc" : "asc"
+  const hasExplicitStartVerse = plan.start_verse !== null && plan.start_verse !== undefined
+  const hasExplicitEndVerse = plan.end_verse !== null && plan.end_verse !== undefined
+
+  if (dailyPages <= 0 || totalPages <= 0 || sessionNum <= 0) {
+    return null
+  }
+
+  const planStartPage = getPlanStartPage(plan)
+  let sessionStart = direction === "desc"
+    ? planStartPage + totalPages - sessionNum * dailyPages
+    : planStartPage + (sessionNum - 1) * dailyPages
+
+  sessionStart = Math.max(1, Math.min(sessionStart, 605))
+  const sessionEnd = Math.max(sessionStart, Math.min(sessionStart + dailyPages, 605))
+  const lowerRef = getAyahByPageFloat(sessionStart)
+  const upperRef = getInclusiveEndAyah(sessionEnd)
+  const totalDays = calculateTotalDays(totalPages, dailyPages)
+  const explicitStartRef: AyahReference = {
+    surah: plan.start_surah_number,
+    ayah: Number(plan.start_verse) || 1,
+  }
+  const endSurah = SURAHS.find((surah) => surah.number === plan.end_surah_number)
+  const explicitEndRef: AyahReference = {
+    surah: plan.end_surah_number,
+    ayah: Number(plan.end_verse) || endSurah?.verseCount || 1,
+  }
+
+  if (direction === "desc") {
+    const isFirstSession = sessionNum === 1
+    const fromRef = isFirstSession
+      ? hasExplicitStartVerse ? explicitStartRef : upperRef
+      : lowerRef
+    const toRef = sessionNum === totalDays && hasExplicitEndVerse
+      ? explicitEndRef
+      : isFirstSession
+        ? normalizeDescendingTopBoundaryRef(lowerRef)
+        : upperRef
+    return formatPlanSessionContent(fromRef, toRef)
+  }
+
+  const fromRef = sessionNum === 1 && hasExplicitStartVerse ? explicitStartRef : lowerRef
+  const toRef = sessionNum === totalDays && hasExplicitEndVerse ? explicitEndRef : upperRef
+  return formatPlanSessionContent(fromRef, toRef)
 }
 
 export function getOffsetContent(

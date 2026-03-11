@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 import { SURAHS, calculateTotalPages, calculateTotalDays, calculateQuranMemorizationProgress } from "@/lib/quran-data"
+import { getSaudiDateString } from "@/lib/saudi-time"
 import { isEvaluatedAttendance } from "@/lib/student-attendance"
 
 const POSITIVE_MEMORIZATION_LEVELS = ["excellent", "good", "very_good", "average"]
@@ -229,7 +230,7 @@ export async function POST(request: Request) {
         daily_pages,
         total_pages: totalPages,
         total_days: totalDays,
-        start_date: start_date || new Date().toISOString().split("T")[0],
+        start_date: start_date || getSaudiDateString(),
         direction: direction || "asc",
         has_previous: effectiveHasPrevious,
         prev_start_surah: effectivePrevStartSurah,

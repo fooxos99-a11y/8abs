@@ -84,23 +84,25 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
       {children}
       {/* Confirmation Dialog */}
       <AlertDialog open={confirm.isOpen} onOpenChange={(open) => !open && handleCancel()}>
-        <AlertDialogContent className="sm:max-w-[360px] rounded-2xl border border-[#D4AF37]/25 bg-white p-0 shadow-[0_18px_45px_rgba(15,23,42,0.14)]" dir="rtl">
-          <AlertDialogHeader className="gap-1.5 px-5 py-5 text-right">
-            <div className="space-y-1 pt-0.5">
-                <AlertDialogTitle className="text-lg font-black text-[#1a2332]">{confirm.title}</AlertDialogTitle>
-                <AlertDialogDescription className="text-sm leading-6 text-neutral-600">{confirm.message}</AlertDialogDescription>
+        <AlertDialogContent className="sm:max-w-[425px] border-[#D4AF37]/20 bg-white rounded-2xl p-0 overflow-hidden shadow-xl" dir="rtl">
+          <AlertDialogHeader className="gap-0 border-b border-[#D4AF37]/20 bg-gradient-to-r from-[#D4AF37]/8 to-transparent px-6 py-5 text-right">
+            <div className="space-y-1.5">
+              <AlertDialogTitle className="text-lg font-bold text-[#1a2332]">{confirm.title}</AlertDialogTitle>
+              <AlertDialogDescription className="text-sm leading-7 text-[#1a2332]/70">
+                {confirm.message}
+              </AlertDialogDescription>
             </div>
           </AlertDialogHeader>
-          <AlertDialogFooter className="mt-0 gap-3 border-t border-[#D4AF37]/12 px-5 py-4 sm:justify-end">
+          <AlertDialogFooter className="mt-0 flex-row-reverse gap-3 border-t border-[#D4AF37]/20 px-6 py-4 sm:flex-row-reverse sm:justify-start">
             <AlertDialogCancel
               onClick={handleCancel}
-              className="mt-0 min-w-24 rounded-xl border border-[#D4AF37]/30 bg-white text-neutral-700 hover:bg-[#D4AF37]/6 hover:text-[#1a2332] focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
+              className="mt-0 h-10 min-w-[110px] rounded-xl border-[#D4AF37]/40 bg-white px-4 text-neutral-600 shadow-none hover:bg-[#D4AF37]/8 hover:text-[#1a2332] focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
             >
               {confirm.cancelText}
             </AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirm}
-              className="min-w-24 rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/10 text-[#B78D2C] shadow-none hover:bg-[#D4AF37]/18 hover:text-[#8E6B16] focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
+              className="h-10 min-w-[110px] rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 px-4 font-medium text-[#C9A961] shadow-none transition-colors hover:bg-[#D4AF37]/20 focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
             >
               {confirm.confirmText}
             </AlertDialogAction>
@@ -110,21 +112,21 @@ export function ConfirmDialogProvider({ children }: { children: React.ReactNode 
 
       {/* Alert Dialog */}
       <AlertDialog open={alert.isOpen} onOpenChange={(open) => !open && handleAlertClose()}>
-        <AlertDialogContent className="sm:max-w-[360px] rounded-2xl border border-[#D4AF37]/25 bg-white p-0 shadow-[0_18px_45px_rgba(15,23,42,0.14)]" dir="rtl">
-          <AlertDialogHeader className="gap-1.5 px-5 py-5 text-right">
-            <div className={`w-full ${shouldShowAlertTitle ? "space-y-1" : ""}`}>
-                <AlertDialogTitle className={shouldShowAlertTitle ? "text-lg font-black text-[#1a2332]" : "sr-only"}>
-                  {accessibleAlertTitle}
-                </AlertDialogTitle>
-                <AlertDialogDescription className="whitespace-pre-line text-sm leading-6 text-neutral-600">
-                  {alert.message}
-                </AlertDialogDescription>
+        <AlertDialogContent className="sm:max-w-[400px] border-[#D4AF37]/20 bg-white rounded-2xl p-0 overflow-hidden shadow-xl" dir="rtl">
+          <AlertDialogHeader className="gap-0 border-b border-[#D4AF37]/20 bg-gradient-to-r from-[#D4AF37]/8 to-transparent px-6 py-5 text-right">
+            <div className={`w-full ${shouldShowAlertTitle ? "space-y-1.5" : "pt-0.5"}`}>
+              <AlertDialogTitle className={shouldShowAlertTitle ? "text-lg font-bold text-[#1a2332]" : "sr-only"}>
+                {accessibleAlertTitle}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="whitespace-pre-line text-sm leading-7 text-[#1a2332]/70">
+                {alert.message}
+              </AlertDialogDescription>
             </div>
           </AlertDialogHeader>
-          <AlertDialogFooter className="mt-0 border-t border-[#D4AF37]/12 px-5 py-4">
+          <AlertDialogFooter className="mt-0 border-t border-[#D4AF37]/20 px-6 py-4">
             <AlertDialogAction
               onClick={handleAlertClose}
-              className="w-full rounded-xl border border-[#D4AF37]/35 bg-[#D4AF37]/10 text-[#B78D2C] shadow-none hover:bg-[#D4AF37]/18 hover:text-[#8E6B16] focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
+              className="h-10 w-full rounded-xl border border-[#D4AF37]/30 bg-[#D4AF37]/10 font-medium text-[#C9A961] shadow-none transition-colors hover:bg-[#D4AF37]/20 focus-visible:border-[#D4AF37] focus-visible:ring-[#D4AF37]/20"
             >
               موافق
             </AlertDialogAction>

@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User, Trophy, Award, Calendar, Star, BarChart3, Medal, Gem, Flame, Zap, Crown, Heart, BookMarked, CheckCircle2, Clock, BookOpen, Library, Check, PlayCircle, Lock } from "lucide-react"
-import { getJuzCoverageFromRange, getPlanMemorizedRange, getSessionContent, getOffsetContent, getStoredMemorizedRange, SURAHS } from "@/lib/quran-data"
+import { getActivePlanDayNumber, getDisplayCompletedDays, getJuzCoverageFromRange, getPlanMemorizedRange, getPlanSessionContent, getOffsetContent, getStoredMemorizedRange, SURAHS } from "@/lib/quran-data"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { ThemeSwitcher } from "@/components/theme-switcher"
@@ -622,30 +622,19 @@ function ProfilePage() {
                   const planDirection = (planData.direction as "asc" | "desc") || "asc"
                   const planFromSurah = planDirection === "asc" ? planData.start_surah_name : planData.end_surah_name
                   const planToSurah = planDirection === "asc" ? planData.end_surah_name : planData.start_surah_name
-                  const startSurahData = SURAHS.find((s) => s.number === Math.min(planData.start_surah_number, planData.end_surah_number))
-                  const planStartPage = startSurahData?.startPage || 1
-
                   // بناء قائمة كل الأيام
                   const allDays = Array.from({ length: totalDays }, (_, i) => {
                     const dayNum = i + 1
-                    const sessionContent = getSessionContent(planStartPage, daily, dayNum, totalPages, planDirection)
+                    const sessionContent = getPlanSessionContent(planData, dayNum)
 
                     let label = ""
                     if (daily === 0.25) {
                       const wajh = Math.ceil(dayNum / 4);
-                      const qStatus = (dayNum - 1) % 4;
-                      if (planDirection === "desc") {
-                         label = `الوجه ${wajh} — الربع ${4 - qStatus}`;
-                      } else {
-                         label = `الوجه ${wajh} — الربع ${qStatus + 1}`;
-                      }
+                      const quarterNum = ((dayNum - 1) % 4) + 1;
+                      label = `الوجه ${wajh} — الربع ${quarterNum}`;
                     } else if (daily === 0.5) {
                       const wajh = Math.ceil(dayNum / 2)
-                      if (planDirection === "desc") {
-                        label = (dayNum % 2 === 1) ? `الوجه ${wajh} — النصف الثاني` : `الوجه ${wajh} — النصف الأول`
-                      } else {
-                        label = (dayNum % 2 === 1) ? `الوجه ${wajh} — النصف الأول` : `الوجه ${wajh} — النصف الثاني`
-                      }
+                      label = (dayNum % 2 === 1) ? `الوجه ${wajh} — النصف الأول` : `الوجه ${wajh} — النصف الثاني`
                     } else if (daily === 1) {
                       label = `الوجه ${dayNum}`
                     } else {
@@ -656,7 +645,8 @@ function ProfilePage() {
                     return { dayNum, label, sessionContent, completed }
                   })
 
-                                    const activeDayNum = Math.min(planCompletedDays + 1, totalDays);
+                                    const displayCompletedDays = getDisplayCompletedDays(planCompletedDays, planData.start_date);
+                                    const activeDayNum = getActivePlanDayNumber(totalDays, planCompletedDays, planData.start_date, planData.created_at);
                   
                   // -- NEW SMART SLIDING WINDOW LOGIC FOR MURAJAA AND RABT --
                   let muraajaaContent = null;
@@ -774,7 +764,7 @@ function ProfilePage() {
                           <div className="absolute right-[28px] top-0 bottom-0 w-0.5 bg-[#d8a355]/15" />
                           <div className="space-y-0">
                             {allDays.map(({ dayNum, label, sessionContent, completed }) => {
-                              const isNext = !completed && dayNum === planCompletedDays + 1
+                              const isNext = !completed && dayNum === displayCompletedDays + 1
                               const hijriDate = completed
                                 ? new Date(completed.date).toLocaleDateString("ar-SA-u-ca-islamic", { day: "numeric", month: "long" })
                                 : null
@@ -812,7 +802,7 @@ function ProfilePage() {
                                       )}
                                     </div>
                                     <p className={`text-[11px] mt-0.5 ${completed ? "text-emerald-600/70" : "text-neutral-400"}`}>
-                                      {sessionContent.text}
+                                      {sessionContent?.text || "-"}
                                     </p>
                                   </div>
                                   {/* التاريخ */}

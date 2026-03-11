@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { getAyahByPageFloat, getInclusiveEndAyah, getSessionContent, SURAHS } from "@/lib/quran-data"
+import { getPlanSessionContent } from "@/lib/quran-data"
 import { isEvaluatedAttendance } from "@/lib/student-attendance"
 
 interface MissedDayItem {
@@ -88,31 +88,28 @@ export async function GET(request: Request) {
         
         // Skip Friday (5) and Saturday (6)
         if (dayOfWeek !== 5 && dayOfWeek !== 6) {
-        const startSurahData = SURAHS.find((s) => s.number === Math.min(plan.start_surah_number, plan.end_surah_number))
-        const planStartPage = startSurahData?.startPage || 1
-        const dir = plan.direction || "asc"
         const dailyStr = String(plan.daily_pages)
         const daily = dailyStr === "0.3333" ? 0.3333 : dailyStr === "0.25" ? 0.25 : plan.daily_pages
-        const sessionContent = getSessionContent(planStartPage, daily, sessionCounter, plan.total_pages, dir)
-        let sessionStart = dir === "desc"
-          ? planStartPage + plan.total_pages - sessionCounter * daily
-          : planStartPage + (sessionCounter - 1) * daily
-        sessionStart = Math.max(1, Math.min(sessionStart, 605))
-        const sessionEnd = Math.max(sessionStart, Math.min(sessionStart + daily, 605))
-        const startRef = getAyahByPageFloat(sessionStart)
-        const endRef = getInclusiveEndAyah(sessionEnd)
-        const startSurah = SURAHS.find((surah) => surah.number === startRef.surah)
-        const endSurah = SURAHS.find((surah) => surah.number === endRef.surah)
+        const sessionContent = getPlanSessionContent({
+          ...plan,
+          daily_pages: daily,
+        }, sessionCounter)
 
             if (!completedDates.has(dStr)) {
+            if (!sessionContent) {
+              sessionCounter++
+              d.setDate(d.getDate() + 1)
+              continue
+            }
+
                 missedDaysList.push({
                     date: dStr,
                     sessionIndex: sessionCounter,
-            content: sessionContent.text,
-            hafiz_from_surah: startSurah?.name || sessionContent.fromSurah,
-            hafiz_from_verse: String(startRef.ayah),
-            hafiz_to_surah: endSurah?.name || sessionContent.toSurah,
-            hafiz_to_verse: String(endRef.ayah),
+          content: sessionContent.text,
+          hafiz_from_surah: sessionContent.fromSurah,
+          hafiz_from_verse: sessionContent.fromVerse,
+          hafiz_to_surah: sessionContent.toSurah,
+          hafiz_to_verse: sessionContent.toVerse,
                 })
             }
 
