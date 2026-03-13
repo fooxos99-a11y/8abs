@@ -28,9 +28,12 @@ export async function GET(request: Request) {
   const url = new URL(request.url)
   let selectedDate = url.searchParams.get("date")
   if (!selectedDate) {
-    const now = new Date()
-    const saDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }))
-    selectedDate = saDate.toISOString().split("T")[0]
+    selectedDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date())
   }
 
 

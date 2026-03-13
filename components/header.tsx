@@ -339,9 +339,7 @@ export function Header() {
 
     // Check if student played today's daily challenge
     if (accNumStr) {
-      const now = new Date();
-      const saDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-      const todayStr = saDate.toISOString().split("T")[0];
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
       const lastPlay = localStorage.getItem(`lastPlayDate_${accNumStr}`);
       setDailyChallengePlayedToday(lastPlay === todayStr);
     }
@@ -1113,7 +1111,7 @@ export function Header() {
 
         {/* محتوى الدرج */}
 
-        <div className="flex-1 overflow-y-auto bg-[#f9fafb] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex-1 overflow-y-auto bg-[#f9fafb] [scrollbar-width:thin] [scrollbar-color:#cbd5e1_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-300 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-400">
 
           {isLoggedIn && (userRole === "teacher" || userRole === "deputy_teacher") && (
             <>
@@ -1349,7 +1347,7 @@ export function Header() {
 
               {/* فئة إدارة المستخدمين */}
 
-              {["إدارة المعلمين", "إدارة الحلقات", "الهيكل الإداري", "طلبات الإلتحاق"].some(p => hasPermission(p)) && <div className="px-2 mb-0.5">
+              {["إدارة المعلمين", "إدارة الحلقات", "الهيكل الإداري", "طلبات التسجيل"].some(p => hasPermission(p)) && <div className="px-2 mb-0.5">
                 <CollapseSection
                   icon={ShieldCheck}
                   label="إدارة المستخدمين"
@@ -1384,7 +1382,7 @@ export function Header() {
                     {
                       icon: UserPlus,
 
-                      label: "طلبات الإلتحاق",
+                      label: "طلبات التسجيل",
 
                       path: "/admin/enrollment-requests",
                     },
@@ -1540,7 +1538,7 @@ export function Header() {
                       icon={Ic}
                       label={label}
                       onClick={() => handleNav(path)}
-                      disabled={label === "المالية" || label === "الإحصائيات"}
+                      disabled={label === "المالية"}
                       indent
                     />
                   ))}

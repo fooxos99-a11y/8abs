@@ -1759,14 +1759,14 @@ function AdminDashboard() {
           </Dialog>
 
           <Dialog open={isStudentRecordsDialogOpen} onOpenChange={setIsStudentRecordsDialogOpen}>
-            <DialogContent className="sm:max-w-[800px] max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
+            <DialogContent className="sm:max-w-[800px] w-[95vw] md:w-full min-h-[50vh] max-h-[90vh] flex flex-col p-0 overflow-hidden" dir="rtl">
+              <DialogHeader className="px-6 py-5 border-b border-gray-100 shrink-0">
                 <DialogTitle className="text-xl text-[#1a2332]">سجلات الطلاب</DialogTitle>
                 <DialogDescription className="text-sm text-neutral-500">
                   اختر الحلقة والطالب لعرض سجلات الحضور والتقييم
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-4 px-6 py-5 flex-1 overflow-y-auto">
                 <div className="space-y-2">
                   <Label htmlFor="recordsCircleSelect" className="text-sm font-medium text-neutral-600">
                     اختر الحلقة

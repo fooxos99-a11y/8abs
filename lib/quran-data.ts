@@ -132,7 +132,7 @@ export const SURAHS: Surah[] = [
 export const TOTAL_MUSHAF_PAGES = 604
 
 // صفحات بداية الأجزاء الثلاثين في مصحف المدينة
-const JUZ_START_PAGES = [
+export const JUZ_START_PAGES = [
   1, 22, 42, 62, 82, 102, 121, 142, 162, 182,
   201, 222, 242, 262, 282, 302, 322, 342, 362, 382,
   402, 422, 442, 462, 482, 502, 522, 542, 562, 582,
@@ -456,7 +456,11 @@ export function getJuzCoverageFromRange(pageRange?: { startPage: number; endPage
     if (fullyCovered) {
       completedJuzs.add(juzNumber)
     } else if (overlaps) {
-      currentJuzs.add(juzNumber)
+      // If it overlaps, it's only "in progress" (current) if the current end page falls inside it.
+      // If it corresponds to a partially memorized start Juz that was left behind, it shouldn't be "in progress".
+      if (pageRange.endPage >= juzStartPage && pageRange.endPage <= juzEndPage) {
+        currentJuzs.add(juzNumber)
+      }
     }
   }
 

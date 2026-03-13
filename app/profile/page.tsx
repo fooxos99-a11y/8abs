@@ -728,7 +728,7 @@ function ProfilePage() {
                           </div>
                         </div>
                         {(() => {
-                          const todayDateStr = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Riyadh" })).toISOString().split("T")[0];
+                          const todayDateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
                           const todayRecord = attendanceRecords.find(r => r.date === todayDateStr);
                           const isMuraajaaCompleted = isEvaluatedAttendance(todayRecord?.status) && todayRecord?.samaa_level && todayRecord?.samaa_level !== "not_completed";
                           const isRabtCompleted = isEvaluatedAttendance(todayRecord?.status) && todayRecord?.rabet_level && todayRecord?.rabet_level !== "not_completed";

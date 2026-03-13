@@ -4,11 +4,27 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { SiteLoader } from "@/components/ui/site-loader"
-import { Copy, Check, ExternalLink, Lock, Unlock, Trash2 } from "lucide-react";
+import { Copy, Check, ExternalLink, Lock, Unlock, Trash2, UserPlus, X, Loader2 } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 import { toast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/hooks/use-admin-auth"
+import { JUZ_START_PAGES, getAyahByPageFloat, getInclusiveEndAyah } from "@/lib/quran-data";
+
+function formatMemorizedAmount(amount?: string) {
+  if (!amount) return "-";
+  if (amount.includes("-")) {
+    const [from, to] = amount.split("-");
+    if (from === to) return `الجزء ${from}`;
+    return `من الجزء ${from} إلى الجزء ${to}`;
+  }
+  return amount; // fallback
+}
 
 interface EnrollmentRequest {
   id: string;
@@ -16,7 +32,7 @@ interface EnrollmentRequest {
   guardian_phone: string;
   id_number: string;
   educational_stage: string;
-  nationality: string;
+  memorized_amount?: string;
   created_at: string;
 }
 
@@ -28,6 +44,90 @@ export default function EnrollmentRequestsPage() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [isEnrollmentOpen, setIsEnrollmentOpen] = useState(true);
   const [isStatusLoading, setIsStatusLoading] = useState(false);
+  const [circles, setCircles] = useState<any[]>([]);
+  const [acceptRequest, setAcceptRequest] = useState<EnrollmentRequest | null>(null);
+  const [acceptForm, setAcceptForm] = useState({
+    name: "",
+    phone: "",
+    id_number: "",
+    account_number: "",
+    educational_stage: "",
+    memorized_amount: "",
+    circle_id: "",
+  });
+
+  useEffect(() => {
+    const fetchCircles = async () => {
+      const { data, error } = await supabase.from("circles").select("id, name");
+      if (!error && data) setCircles(data);
+    };
+    fetchCircles();
+  }, []);
+
+  const handleOpenAccept = (req: EnrollmentRequest) => {
+    setAcceptRequest(req);
+    setAcceptForm({
+      name: req.full_name,
+      phone: req.guardian_phone,
+      id_number: req.id_number,
+      account_number: req.id_number,
+      educational_stage: req.educational_stage,
+      memorized_amount: req.memorized_amount || "",
+      circle_id: "",
+    });
+  };
+
+  const handleConfirmAccept = async () => {
+    if (!acceptRequest) return;
+    if (!acceptForm.circle_id) {
+      toast({ title: "خطأ", description: "الرجاء اختيار الحلقة", variant: "destructive" });
+      return;
+    }
+    
+    let memorizedStartSurah = null;
+    let memorizedStartVerse = null;
+    let memorizedEndSurah = null;
+    let memorizedEndVerse = null;
+
+    if (acceptForm.memorized_amount && acceptForm.memorized_amount.includes("-")) {
+      const [fromJuzStr, toJuzStr] = acceptForm.memorized_amount.split("-");
+      const fromJuz = parseInt(fromJuzStr, 10);
+      const toJuz = parseInt(toJuzStr, 10);
+
+      if (!isNaN(fromJuz) && !isNaN(toJuz) && fromJuz >= 1 && toJuz <= 30) {
+        // Find correct start and end positions accurately using page boundaries
+        const startPage = JUZ_START_PAGES[fromJuz - 1] || 1;
+        const endPage = JUZ_START_PAGES[toJuz] ? JUZ_START_PAGES[toJuz] - 1 : 604;
+
+        const startRef = getAyahByPageFloat(startPage);
+        const endRef = getInclusiveEndAyah(endPage + 1);
+
+        memorizedStartSurah = startRef.surah;
+        memorizedStartVerse = startRef.ayah;
+        memorizedEndSurah = endRef.surah;
+        memorizedEndVerse = endRef.ayah;
+      }
+    }
+
+    // insert into students
+    const { error: insertError } = await supabase.from("students").insert({
+      name: acceptForm.name,
+      phone: acceptForm.phone,
+      id_number: acceptForm.id_number,
+      account_number: acceptForm.account_number,
+      educational_stage: acceptForm.educational_stage,
+      circle_id: acceptForm.circle_id,
+      is_archived: false,
+      memorized_start_surah: memorizedStartSurah,
+      memorized_start_verse: memorizedStartVerse,
+      memorized_end_surah: memorizedEndSurah,
+      memorized_end_verse: memorizedEndVerse,
+    // delete request
+    await supabase.from("enrollment_requests").delete().eq("id", acceptRequest.id);
+    setRequests(requests.filter(r => r.id !== acceptRequest.id));
+    setAcceptRequest(null);
+    toast({ title: "نجاح", description: "تم قبول الطالب بنجاح" });
+  };
 
   useEffect(() => {
     fetchRequests();
@@ -139,7 +239,7 @@ export default function EnrollmentRequestsPage() {
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3 mt-4 md:mt-0">
+          <div className="flex flex-wrap items-center gap-3 mt-4 md:mt-0">
             <button
               onClick={toggleEnrollmentStatus}
               disabled={isStatusLoading}
@@ -151,7 +251,7 @@ export default function EnrollmentRequestsPage() {
               title={isEnrollmentOpen ? "إيقاف استقبال طلبات التسجيل" : "تفعيل استقبال طلبات التسجيل"}
             >
               {isStatusLoading ? (
-                <SiteLoader color={isEnrollmentOpen ? "#dc2626" : "#16a34a"} />
+                <Loader2 className="w-5 h-5 animate-spin" />
               ) : isEnrollmentOpen ? (
                 <Lock className="w-5 h-5" />
               ) : (
@@ -197,7 +297,7 @@ export default function EnrollmentRequestsPage() {
                     <th className="px-6 py-4 font-semibold">رقم ولي الأمر</th>
                     <th className="px-6 py-4 font-semibold">رقم الهوية</th>
                     <th className="px-6 py-4 font-semibold">المرحلة الدراسية</th>
-                    <th className="px-6 py-4 font-semibold">الجنسية</th>
+                    <th className="px-6 py-4 font-semibold">المحفوظ</th>
                     <th className="px-6 py-4 font-semibold">تاريخ الطلب</th>
                     <th className="px-6 py-4 font-semibold last:rounded-tl-2xl">إجراءات</th>
                   </tr>
@@ -221,7 +321,7 @@ export default function EnrollmentRequestsPage() {
                         {request.educational_stage}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                        {request.nationality}
+                          {formatMemorizedAmount(request.memorized_amount)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm">
                         {new Date(request.created_at).toLocaleString("ar-SA", {
@@ -233,13 +333,22 @@ export default function EnrollmentRequestsPage() {
                         })}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <button
-                          onClick={() => deleteRequest(request.id)}
-                          className="p-2 text-red-500 hover:bg-red-50 rounded-full transition-colors flex justify-center items-center w-8 h-8"
-                          title="حذف الطلب"
-                        >
-                          <Trash2 className="w-5 h-5 mx-auto" />
-                        </button>
+                        <div className="flex items-center justify-center gap-2">
+                          <button
+                            onClick={() => handleOpenAccept(request)}
+                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-md transition-colors"
+                            title="قبول"
+                          >
+                            <UserPlus className="h-4 w-4" />
+                          </button>
+                          <button
+                            onClick={() => deleteRequest(request.id)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                            title="رفض"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -249,6 +358,62 @@ export default function EnrollmentRequestsPage() {
           )}
         </div>
       </main>
+
+      <Dialog open={!!acceptRequest} onOpenChange={(open) => !open && setAcceptRequest(null)}>
+        <DialogContent className="max-w-md max-h-[90vh] flex flex-col" dir="rtl">
+          <DialogHeader>
+            <DialogTitle>قبول الطالب</DialogTitle>
+            <DialogDescription>
+              الرجاء مراجعة البيانات واختيار حلقة للطالب قبل القبول.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
+            <div className="grid gap-2">
+              <Label>الاسم</Label>
+              <Input value={acceptForm.name} onChange={(e) => setAcceptForm({ ...acceptForm, name: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>رقم الجوال</Label>
+              <Input value={acceptForm.phone} onChange={(e) => setAcceptForm({ ...acceptForm, phone: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>رقم الهوية</Label>
+              <Input value={acceptForm.id_number} onChange={(e) => setAcceptForm({ ...acceptForm, id_number: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>رقم الحساب</Label>
+              <Input value={acceptForm.account_number} onChange={(e) => setAcceptForm({ ...acceptForm, account_number: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>المرحلة الدراسية</Label>
+              <Input value={acceptForm.educational_stage} onChange={(e) => setAcceptForm({ ...acceptForm, educational_stage: e.target.value })} />
+            </div>
+            <div className="grid gap-2">
+              <Label>المحفوظ</Label>
+              <Input value={formatMemorizedAmount(acceptForm.memorized_amount) || "غير محدد"} readOnly className="bg-gray-50 bg-opacity-50 text-gray-500 cursor-default" />
+            </div>
+            <div className="grid gap-2">
+              <Label>تحديد الحلقة</Label>
+              <Select value={acceptForm.circle_id} onValueChange={(val) => setAcceptForm({ ...acceptForm, circle_id: val })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="اختر الحلقة" />
+                </SelectTrigger>
+                <SelectContent>
+                  {circles.map((c) => (
+                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          
+          <DialogFooter className="gap-2 sm:space-x-0 mt-2">
+            <Button variant="outline" onClick={() => setAcceptRequest(null)}>إلغاء</Button>
+            <Button onClick={handleConfirmAccept} className="bg-emerald-600 hover:bg-emerald-700 text-white">تأكيد القبول</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Footer />
     </div>

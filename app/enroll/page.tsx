@@ -6,7 +6,7 @@ import { toast } from "@/hooks/use-toast";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { SiteLoader } from "@/components/ui/site-loader"
-import { UserPlus, User, Phone, Hash, GraduationCap, Flag, Lock } from "lucide-react";
+import { User, Phone, Hash, GraduationCap, BookOpen, UserPlus } from "lucide-react";
 
 export default function EnrollPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -40,7 +40,8 @@ export default function EnrollPage() {
     guardianPhone: "",
     idNumber: "",
     educationalStage: "",
-    nationality: "",
+    memorizedFrom: "",
+    memorizedTo: "",
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -62,7 +63,7 @@ export default function EnrollPage() {
           guardian_phone: formData.guardianPhone,
           id_number: formData.idNumber,
           educational_stage: formData.educationalStage,
-          nationality: formData.nationality,
+          memorized_amount: formData.memorizedFrom && formData.memorizedTo ? `${formData.memorizedFrom}-${formData.memorizedTo}` : "",
         },
       ]);
 
@@ -74,7 +75,8 @@ export default function EnrollPage() {
         guardianPhone: "",
         idNumber: "",
         educationalStage: "",
-        nationality: "",
+        memorizedFrom: "",
+        memorizedTo: "",
       });
       setIsSuccess(true);
       setTimeout(() => setIsSuccess(false), 3000);
@@ -197,21 +199,49 @@ export default function EnrollPage() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <label htmlFor="nationality" className="text-[#023232] font-semibold text-sm md:text-base flex items-center gap-2">
-                  <Flag className="w-4 h-4 text-[#d8a355]" />
-                  الجنسية <span className="text-red-500">*</span>
+              <div className="space-y-2 md:col-span-2">
+                <label className="text-[#023232] font-semibold text-sm md:text-base flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-[#d8a355]" />
+                  المحفوظ <span className="text-red-500">*</span>
                 </label>
-                <input
-                  type="text"
-                  id="nationality"
-                  name="nationality"
-                  required
-                  value={formData.nationality}
-                  onChange={handleChange}
-                  className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors"
-                  placeholder="سعودي"
-                />
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="memorizedFrom" className="text-xs text-gray-500 block mb-1">من الجزء</label>
+                    <select
+                      id="memorizedFrom"
+                      name="memorizedFrom"
+                      required
+                      value={formData.memorizedFrom}
+                      onChange={handleChange}
+                      className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors bg-white"
+                    >
+                      <option value="" disabled>اختر بداية الحفظ</option>
+                      {Array.from({ length: 30 }, (_, i) => i + 1).map((juz) => (
+                        <option key={juz} value={juz.toString()}>
+                          الجزء {juz}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label htmlFor="memorizedTo" className="text-xs text-gray-500 block mb-1">إلى الجزء</label>
+                    <select
+                      id="memorizedTo"
+                      name="memorizedTo"
+                      required
+                      value={formData.memorizedTo}
+                      onChange={handleChange}
+                      className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors bg-white"
+                    >
+                      <option value="" disabled>اختر نهاية الحفظ</option>
+                      {Array.from({ length: 30 }, (_, i) => i + 1).map((juz) => (
+                        <option key={juz} value={juz.toString()}>
+                          الجزء {juz}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
               </div>
 
               <button

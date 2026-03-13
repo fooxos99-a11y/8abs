@@ -72,9 +72,7 @@ export default function DailyChallengeStudent() {
 
   const getTodayDate = () => {
     // إرجاع تاريخ اليوم بتوقيت السعودية
-    const now = new Date()
-    const saDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }))
-    return saDate.toISOString().split("T")[0]
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Riyadh', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
   }
 
   // تحديات افتراضية يعاد تدويرها للأبد

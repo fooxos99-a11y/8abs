@@ -99,9 +99,12 @@ export default function StudentDailyAttendancePage() {
   const [selectedCircle, setSelectedCircle] = useState("all")
 
   const getSaudiDate = () => {
-    const now = new Date();
-    const saDate = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-    return saDate.toISOString().split("T")[0];
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Riyadh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    }).format(new Date());
   }
 
   const [selectedDate, setSelectedDate] = useState(getSaudiDate())
@@ -150,12 +153,7 @@ export default function StudentDailyAttendancePage() {
   }
 
   const isFuture = (() => {
-    const getSaudiDateObj = (d: string) => {
-      const o = new Date(new Date(d).toLocaleString("en-US", { timeZone: "Asia/Riyadh" }));
-      o.setHours(0, 0, 0, 0);
-      return o;
-    };
-    return getSaudiDateObj(selectedDate) > getSaudiDateObj(getSaudiDate());
+    return selectedDate > getSaudiDate();
   })();
 
   const sorted = [...filteredRecords].sort((a, b) => {
