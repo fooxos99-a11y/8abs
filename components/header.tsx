@@ -26,6 +26,7 @@ import {
   UserMinus,
   ArrowRightLeft,
   Settings,
+  Eye,
   FileText,
   Award,
   Edit2,
@@ -51,7 +52,6 @@ import { createClient } from "@/lib/supabase/client";
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog";
 
 import { TeacherAttendanceModal } from "@/components/teacher-attendance-modal";
-import { getStoredMemorizedRange, TOTAL_MUSHAF_PAGES } from "@/lib/quran-data";
 
 import {
   DropdownMenu,
@@ -529,12 +529,8 @@ export function Header() {
           sidebarPlanName: `${planData.plan.start_surah_name} ← ${planData.plan.end_surah_name}`,
         }));
       } else {
-        const storedRange = getStoredMemorizedRange(student);
-        const memorizedPages = storedRange ? Math.max(0, storedRange.endPage - storedRange.startPage + 1) : 0;
-        const quranProgress = memorizedPages > 0
-          ? Math.max(0, Math.min(100, (memorizedPages / TOTAL_MUSHAF_PAGES) * 100))
-          : 0;
-        const quranLevel = Math.round(quranProgress);
+        const quranProgress = planData.quranProgressPercent ?? 0;
+        const quranLevel = planData.quranLevel ?? Math.round(quranProgress);
 
         setSidebarPlanProgress(0);
         setSidebarQuranProgress(quranProgress);
@@ -1624,6 +1620,7 @@ export function Header() {
           )}
         </div>
       </div>
+      <GlobalAdminModals />
     </>
   );
 }

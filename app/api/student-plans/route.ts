@@ -1,6 +1,18 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
-import { SURAHS, calculateTotalPages, calculateTotalDays, calculateQuranMemorizationProgress, resolvePlanTotalDays, resolvePlanTotalPages } from "@/lib/quran-data"
+import {
+  SURAHS,
+  calculateQuranMemorizationProgress,
+  getContiguousCompletedJuzRange,
+  getJuzBounds,
+  getJuzNumbersForPageRange,
+  getNextAyahReference,
+  getNormalizedCompletedJuzs,
+  hasScatteredCompletedJuzs,
+  getPageFloatForAyah,
+  resolvePlanTotalDays,
+  resolvePlanTotalPages,
+} from "@/lib/quran-data"
 import { getSaudiDateString } from "@/lib/saudi-time"
 import { isEvaluatedAttendance } from "@/lib/student-attendance"
 
@@ -93,6 +105,12 @@ export async function GET(request: Request) {
     }
 
     if (studentId) {
+      const { data: studentData } = await supabase
+        .from("students")
+        .select("completed_juzs, current_juzs")
+        .eq("id", studentId)
+        .maybeSingle()
+
       // جلب الخطة مع عدد الأيام المكتملة
       const { data: plans, error } = await supabase
         .from("student_plans")
@@ -103,14 +121,38 @@ export async function GET(request: Request) {
       if (error) throw error
 
       if (!plans || plans.length === 0) {
-        return NextResponse.json({ plan: null, completedDays: 0 })
+        const quranMemorization = calculateQuranMemorizationProgress(
+          {
+            completed_juzs: studentData?.completed_juzs || [],
+          },
+          0,
+        )
+
+        return NextResponse.json({
+          plan: null,
+          completedDays: 0,
+          progressPercent: 0,
+          quranMemorizedPages: quranMemorization.memorizedPages,
+          quranProgressPercent: quranMemorization.progressPercent,
+          quranLevel: quranMemorization.level,
+          attendanceRecords: [],
+          completedRecords: [],
+        })
       }
 
       const rawPlan = plans[0] // الخطة الأحدث هي الفعالة
       const plan = {
         ...rawPlan,
-        total_pages: resolvePlanTotalPages(rawPlan),
-        total_days: resolvePlanTotalDays(rawPlan),
+        completed_juzs: studentData?.completed_juzs || [],
+        current_juzs: studentData?.current_juzs || [],
+        total_pages: resolvePlanTotalPages({
+          ...rawPlan,
+          completed_juzs: studentData?.completed_juzs || [],
+        }),
+        total_days: resolvePlanTotalDays({
+          ...rawPlan,
+          completed_juzs: studentData?.completed_juzs || [],
+        }),
       }
 
       // جلب سجلات الحضور مع تقييماتها (join مع evaluations)
@@ -194,34 +236,109 @@ export async function POST(request: Request) {
 
     const { data: studentMemorizedData } = await supabase
       .from("students")
-      .select("memorized_start_surah, memorized_start_verse, memorized_end_surah, memorized_end_verse")
+      .select("memorized_start_surah, memorized_start_verse, memorized_end_surah, memorized_end_verse, completed_juzs, current_juzs")
       .eq("id", student_id)
       .maybeSingle()
 
+    const normalizedCompletedJuzs = getNormalizedCompletedJuzs(studentMemorizedData?.completed_juzs)
+    const completedJuzRange = hasScatteredCompletedJuzs(normalizedCompletedJuzs)
+      ? null
+      : getContiguousCompletedJuzRange(normalizedCompletedJuzs)
+
     const effectiveHasPrevious =
       Boolean(has_previous) ||
-      Boolean(studentMemorizedData?.memorized_start_surah && studentMemorizedData?.memorized_end_surah)
+      Boolean(
+        (studentMemorizedData?.memorized_start_surah && studentMemorizedData?.memorized_end_surah) ||
+        completedJuzRange ||
+        normalizedCompletedJuzs.length > 0,
+      )
 
-    const effectivePrevStartSurah = prev_start_surah || studentMemorizedData?.memorized_start_surah || null
-    const effectivePrevStartVerse = prev_start_verse || studentMemorizedData?.memorized_start_verse || null
-    const effectivePrevEndSurah = prev_end_surah || studentMemorizedData?.memorized_end_surah || null
-    const effectivePrevEndVerse = prev_end_verse || studentMemorizedData?.memorized_end_verse || null
+    const effectivePrevStartSurah = prev_start_surah || studentMemorizedData?.memorized_start_surah || completedJuzRange?.startSurahNumber || null
+    const effectivePrevStartVerse = prev_start_verse || studentMemorizedData?.memorized_start_verse || completedJuzRange?.startVerseNumber || null
+    const effectivePrevEndSurah = prev_end_surah || studentMemorizedData?.memorized_end_surah || completedJuzRange?.endSurahNumber || null
+    const effectivePrevEndVerse = prev_end_verse || studentMemorizedData?.memorized_end_verse || completedJuzRange?.endVerseNumber || null
 
     if (!student_id || !start_surah_number || !end_surah_number || !daily_pages) {
       return NextResponse.json({ error: "البيانات المطلوبة ناقصة" }, { status: 400 })
     }
 
-    if (effectiveHasPrevious) {
+    const normalizedDirection = direction || (Number(start_surah_number) > Number(end_surah_number) ? "desc" : "asc")
+    let adjustedStartSurahNumber = Number(start_surah_number)
+    let adjustedStartVerse = Number(start_verse) || 1
+    let adjustedPlanMessage: string | null = null
+
+    const startSurahData = SURAHS.find((surah) => surah.number === adjustedStartSurahNumber)
+    const endSurahData = SURAHS.find((surah) => surah.number === Number(end_surah_number))
+
+    if (!startSurahData || !endSurahData) {
+      return NextResponse.json({ error: "تعذر تحديد السور المطلوبة" }, { status: 400 })
+    }
+
+    const selectedStartPage = getPageFloatForAyah(adjustedStartSurahNumber, adjustedStartVerse)
+    const selectedEndAyah = Number(end_verse) || endSurahData.verseCount
+    const nextSelectedEndAyah = getNextAyahReference(Number(end_surah_number), selectedEndAyah)
+    const selectedEndPage = nextSelectedEndAyah
+      ? getPageFloatForAyah(nextSelectedEndAyah.surah, nextSelectedEndAyah.ayah)
+      : 605
+    const selectedJuzs = getJuzNumbersForPageRange(selectedStartPage, selectedEndPage, normalizedDirection)
+    const completedJuzSet = new Set<number>((studentMemorizedData?.completed_juzs || []).filter((juzNumber: number) => Number.isInteger(juzNumber)))
+    const overlappingJuzs = selectedJuzs.filter((juzNumber) => completedJuzSet.has(juzNumber))
+
+    if (overlappingJuzs.length > 0) {
+      const leadingCompletedJuzs: number[] = []
+
+      for (const juzNumber of selectedJuzs) {
+        if (!completedJuzSet.has(juzNumber)) {
+          break
+        }
+
+        leadingCompletedJuzs.push(juzNumber)
+      }
+
+      if (leadingCompletedJuzs.length === selectedJuzs.length) {
+        return NextResponse.json({ error: "النطاق المختار محفوظ بالكامل ضمن الأجزاء الناجحة للطالب" }, { status: 400 })
+      }
+
+      if (leadingCompletedJuzs.length > 0) {
+        const nextJuzNumber = selectedJuzs[leadingCompletedJuzs.length]
+        const nextJuzBounds = getJuzBounds(nextJuzNumber)
+
+        if (!nextJuzBounds) {
+          return NextResponse.json({ error: "تعذر تحديد بداية النطاق بعد تجاوز الأجزاء الناجحة" }, { status: 400 })
+        }
+
+        if (normalizedDirection === "desc") {
+          adjustedStartSurahNumber = nextJuzBounds.endSurahNumber
+          adjustedStartVerse = nextJuzBounds.endVerseNumber
+        } else {
+          adjustedStartSurahNumber = nextJuzBounds.startSurahNumber
+          adjustedStartVerse = nextJuzBounds.startVerseNumber
+        }
+
+        adjustedPlanMessage = `تم تجاوز الأجزاء الناجحة في بداية النطاق تلقائيًا: ${leadingCompletedJuzs.join("، ")}`
+      }
+    }
+
+    if (effectiveHasPrevious && !hasScatteredCompletedJuzs(normalizedCompletedJuzs)) {
       const expectedNextStart = getExpectedNextStart(effectivePrevStartSurah, effectivePrevEndSurah, effectivePrevEndVerse)
       if (!expectedNextStart) {
         return NextResponse.json({ error: "بيانات الحفظ السابق غير مكتملة" }, { status: 400 })
       }
 
-      const normalizedStartVerse = Number(start_verse) || 1
+      const normalizedStartVerse = adjustedStartVerse
+      const previousEndSurahData = SURAHS.find((surah) => surah.number === Number(effectivePrevEndSurah))
+      const normalizedEndVerse = Number(end_verse) || endSurahData.verseCount
+      const normalizedPrevStartVerse = Number(effectivePrevStartVerse) || 1
+      const normalizedPrevEndVerse = Number(effectivePrevEndVerse) || previousEndSurahData?.verseCount || 1
       const previousDirection = Number(effectivePrevStartSurah) > Number(effectivePrevEndSurah) ? "desc" : "asc"
+      const isMiddlePreviousSkip = previousDirection === "asc" &&
+        compareAyahRefs(adjustedStartSurahNumber, normalizedStartVerse, Number(effectivePrevStartSurah), normalizedPrevStartVerse) < 0 &&
+        compareAyahRefs(Number(end_surah_number), normalizedEndVerse, Number(effectivePrevEndSurah), normalizedPrevEndVerse) > 0
+
       if (
+        !isMiddlePreviousSkip &&
         !isStartAllowedAfterPrevious(
-          Number(start_surah_number),
+          adjustedStartSurahNumber,
           normalizedStartVerse,
           expectedNextStart.surahNumber,
           expectedNextStart.verseNumber,
@@ -238,16 +355,37 @@ export async function POST(request: Request) {
       }
     }
 
-    const totalPages = calculateTotalPages(
-      start_surah_number,
+    const totalPages = resolvePlanTotalPages({
+      start_surah_number: adjustedStartSurahNumber,
+      start_verse: adjustedStartVerse,
       end_surah_number,
-      start_verse,
       end_verse,
-    )
+      direction: normalizedDirection,
+      has_previous: effectiveHasPrevious,
+      prev_start_surah: effectivePrevStartSurah,
+      prev_start_verse: effectivePrevStartVerse,
+      prev_end_surah: effectivePrevEndSurah,
+      prev_end_verse: effectivePrevEndVerse,
+      completed_juzs: normalizedCompletedJuzs,
+    })
     const totalDays =
       totalDaysOverride && Number(totalDaysOverride) > 0
         ? Number(totalDaysOverride)
-        : calculateTotalDays(totalPages, daily_pages)
+        : resolvePlanTotalDays({
+            start_surah_number: adjustedStartSurahNumber,
+            start_verse: adjustedStartVerse,
+            end_surah_number,
+            end_verse,
+            total_pages: totalPages,
+            daily_pages,
+            direction: normalizedDirection,
+            has_previous: effectiveHasPrevious,
+            prev_start_surah: effectivePrevStartSurah,
+            prev_start_verse: effectivePrevStartVerse,
+            prev_end_surah: effectivePrevEndSurah,
+            prev_end_verse: effectivePrevEndVerse,
+            completed_juzs: normalizedCompletedJuzs,
+          })
 
     const { data: existingPlans, error: existingPlansError } = await supabase
       .from("student_plans")
@@ -262,9 +400,9 @@ export async function POST(request: Request) {
       .from("student_plans")
       .insert([{
         student_id,
-        start_surah_number,
-        start_surah_name,
-        start_verse: start_verse || null,
+        start_surah_number: adjustedStartSurahNumber,
+        start_surah_name: SURAHS.find((surah) => surah.number === adjustedStartSurahNumber)?.name || start_surah_name,
+        start_verse: adjustedStartVerse || null,
         end_surah_number,
         end_surah_name,
         end_verse: end_verse || null,
@@ -272,7 +410,7 @@ export async function POST(request: Request) {
         total_pages: totalPages,
         total_days: totalDays,
         start_date: start_date || getSaudiDateString(),
-        direction: direction || "asc",
+        direction: normalizedDirection,
         has_previous: effectiveHasPrevious,
         prev_start_surah: effectivePrevStartSurah,
         prev_start_verse: effectivePrevStartVerse,
@@ -298,7 +436,15 @@ export async function POST(request: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, plan: data }, { status: 201 })
+    return NextResponse.json({
+      success: true,
+      plan: {
+        ...data,
+        completed_juzs: normalizedCompletedJuzs,
+        current_juzs: studentMemorizedData?.current_juzs || [],
+      },
+      message: adjustedPlanMessage,
+    }, { status: 201 })
   } catch (error) {
     console.error("[plans] POST error:", error)
     return NextResponse.json({ error: "حدث خطأ في حفظ الخطة" }, { status: 500 })

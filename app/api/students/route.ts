@@ -1,11 +1,45 @@
 import { createClient } from "@/lib/supabase/server"
 import { NextResponse } from "next/server"
 
+function getSupabaseErrorMessage(error: unknown) {
+  if (!error) return "حدث خطأ غير معروف";
+
+  if (error instanceof Error) {
+    return error.message || "حدث خطأ غير معروف";
+  }
+
+  if (typeof error === "object") {
+    const candidate = error as {
+      message?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+    return candidate.message || candidate.details || candidate.hint || candidate.code || JSON.stringify(candidate);
+  }
+
+  return String(error);
+}
+
 export async function POST(request: Request) {
   try {
     const supabase = await createClient()
     const body = await request.json()
-    const { name, circle_name, id_number, account_number, guardian_phone, initial_points = 0 } = body
+    const {
+      name,
+      circle_name,
+      id_number,
+      account_number,
+      guardian_phone,
+      initial_points = 0,
+      memorized_start_surah,
+      memorized_start_verse,
+      memorized_end_surah,
+      memorized_end_verse,
+      completed_juzs,
+      current_juzs,
+    } = body
 
     console.log("[v0] POST /api/students - Received data:", {
       name,
@@ -14,6 +48,12 @@ export async function POST(request: Request) {
       account_number,
       guardian_phone,
       initial_points,
+      memorized_start_surah,
+      memorized_start_verse,
+      memorized_end_surah,
+      memorized_end_verse,
+      completed_juzs,
+      current_juzs,
     })
 
     if (!name || !circle_name) {
@@ -51,11 +91,24 @@ export async function POST(request: Request) {
       guardian_phone,
     }
 
+    if (memorized_start_surah !== undefined) insertData.memorized_start_surah = memorized_start_surah
+    if (memorized_start_verse !== undefined) insertData.memorized_start_verse = memorized_start_verse
+    if (memorized_end_surah !== undefined) insertData.memorized_end_surah = memorized_end_surah
+    if (memorized_end_verse !== undefined) insertData.memorized_end_verse = memorized_end_verse
+    if (completed_juzs !== undefined) insertData.completed_juzs = completed_juzs
+    if (current_juzs !== undefined) insertData.current_juzs = current_juzs
+
     const { data, error } = await supabase.from("students").insert([insertData]).select().single()
 
     if (error) {
       console.error("[v0] Error adding student:", error)
-      return NextResponse.json({ error: "فشل في إضافة الطالب" }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: getSupabaseErrorMessage(error),
+          source: "students.insert",
+        },
+        { status: 500 }
+      )
     }
 
     console.log("[v0] Student added to database:", data)
@@ -68,7 +121,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, student: studentWithCircleName }, { status: 201 })
   } catch (error) {
     console.error("[v0] Error in POST /api/students:", error)
-    return NextResponse.json({ error: "حدث خطأ في الخادم" }, { status: 500 })
+    return NextResponse.json({ error: getSupabaseErrorMessage(error) }, { status: 500 })
   }
 }
 
@@ -162,6 +215,8 @@ export async function PATCH(request: Request) {
       memorized_start_verse,
       memorized_end_surah,
       memorized_end_verse,
+      completed_juzs,
+      current_juzs,
     } = body
 
     const studentId = id || new URL(request.url).searchParams.get("id")
@@ -185,6 +240,8 @@ export async function PATCH(request: Request) {
           memorized_start_verse: null,
           memorized_end_surah: null,
           memorized_end_verse: null,
+          completed_juzs: [],
+          current_juzs: [],
         })
         .eq("id", studentId)
         .select()
@@ -223,6 +280,8 @@ export async function PATCH(request: Request) {
     if (memorized_start_verse !== undefined) updateData.memorized_start_verse = memorized_start_verse
     if (memorized_end_surah !== undefined) updateData.memorized_end_surah = memorized_end_surah
     if (memorized_end_verse !== undefined) updateData.memorized_end_verse = memorized_end_verse
+    if (completed_juzs !== undefined) updateData.completed_juzs = completed_juzs
+    if (current_juzs !== undefined) updateData.current_juzs = current_juzs
     if (add_points !== undefined) {
       const { data: currentStudent, error: fetchError } = await supabase
         .from("students")

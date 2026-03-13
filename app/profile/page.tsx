@@ -10,7 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { User, Trophy, Award, Calendar, Star, BarChart3, Medal, Gem, Flame, Zap, Crown, Heart, BookMarked, CheckCircle2, Clock, BookOpen, Library, Check, PlayCircle, Lock } from "lucide-react"
-import { getActivePlanDayNumber, getDisplayCompletedDays, getJuzCoverageFromRange, getPlanMemorizedRange, getPlanSessionContent, getOffsetContent, getStoredMemorizedRange, resolvePlanTotalDays, resolvePlanTotalPages, SURAHS } from "@/lib/quran-data"
+import { getActivePlanDayNumber, getDisplayCompletedDays, getJuzCoverageFromRange, getJuzProgressDetailsFromRange, getPlanMemorizedRange, getPlanSessionContent, getPlanSupportSessionContent, getStoredMemorizedRange, hasScatteredCompletedJuzs, resolvePlanTotalDays, resolvePlanTotalPages } from "@/lib/quran-data"
 import { Button } from "@/components/ui/button"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { ThemeSwitcher } from "@/components/theme-switcher"
@@ -348,13 +348,15 @@ function ProfilePage() {
   }
 
   function formatPlanSessionRange(fromSurah?: string | null, fromVerse?: string | null, toSurah?: string | null, toVerse?: string | null, fallbackText?: string | null) {
-    if (!fromSurah || !fromVerse || !toSurah || !toVerse) return fallbackText || "-"
+    if (fallbackText?.trim()) return fallbackText
+    if (!fromSurah || !fromVerse || !toSurah || !toVerse) return "-"
     return `من سورة ${fromSurah} آية ${fromVerse} إلى سورة ${toSurah} آية ${toVerse}`
   }
 
   const normalizedPlanData = planData
     ? {
         ...planData,
+        completed_juzs: planData.completed_juzs || studentData?.completed_juzs || [],
         has_previous: planData.has_previous || !!(planData.prev_start_surah || studentData?.memorized_start_surah),
         prev_start_surah: planData.prev_start_surah || studentData?.memorized_start_surah || null,
         prev_start_verse: planData.prev_start_verse || studentData?.memorized_start_verse || null,
@@ -365,9 +367,16 @@ function ProfilePage() {
 
   const memorizedRange = normalizedPlanData
     ? getPlanMemorizedRange(normalizedPlanData, planCompletedDays)
-    : getStoredMemorizedRange(studentData)
+    : hasScatteredCompletedJuzs(studentData?.completed_juzs)
+      ? null
+      : getStoredMemorizedRange(studentData)
 
   const { completedJuzs, currentJuzs } = getJuzCoverageFromRange(memorizedRange)
+  const juzProgressDetails = getJuzProgressDetailsFromRange(
+    memorizedRange,
+    studentData?.completed_juzs,
+    studentData?.current_juzs,
+  )
 
   return (
     <>
@@ -640,8 +649,12 @@ function ProfilePage() {
                       label = (dayNum % 2 === 1) ? `الوجه ${wajh} — النصف الأول` : `الوجه ${wajh} — النصف الثاني`
                     } else if (daily === 1) {
                       label = `الوجه ${dayNum}`
-                    } else {
+                    } else if (daily === 2) {
                       label = `الوجه ${(dayNum - 1) * 2 + 1} – ${dayNum * 2}`
+                    } else if (daily === 3) {
+                      label = `الأوجه ${(dayNum - 1) * 3 + 1} – ${dayNum * 3}`
+                    } else {
+                      label = `${daily} أوجه`
                     }
 
                     const completed = planAttendance[i] || null
@@ -651,57 +664,9 @@ function ProfilePage() {
                                     const displayCompletedDays = getDisplayCompletedDays(planCompletedDays, planData.start_date);
                                     const activeDayNum = getActivePlanDayNumber(totalDays, planCompletedDays, planData.start_date, planData.created_at);
                   
-                  // -- NEW SMART SLIDING WINDOW LOGIC FOR MURAJAA AND RABT --
-                  let muraajaaContent = null;
-                  let rabtContent = null;
-                  
-                  const rootSurahNum = planData.prev_start_surah || planData.start_surah_number;
-                  const rootSurah = SURAHS.find(s => s.number === rootSurahNum);
-                  
-                  if (rootSurah) {
-                    const rootStartPage = rootSurah.startPage;
-                    
-                    // 1. Calculate Total Memorized Pages (TMP) up to today
-                    let prevVolume = 0;
-                    if (planData.has_previous && planData.prev_start_surah && planData.prev_end_surah) {
-                      const s1 = SURAHS.find(s => s.number === planData.prev_start_surah);
-                      const s2 = SURAHS.find(s => s.number === planData.prev_end_surah);
-                      if (s1 && s2) {
-                        const startP = s1.startPage;
-                        let endP = 605;
-                        if (s2.number < 114) {
-                          const nextS = SURAHS.find(x => x.number === s2.number + 1);
-                          if (nextS) endP = nextS.startPage;
-                        }
-                        prevVolume = Math.abs(endP - startP);
-                      }
-                    }
-                    
-                    const completedCurrentPlanPages = (activeDayNum - 1) * daily;
-                    const tmp = prevVolume + completedCurrentPlanPages;
-                    
-                    if (tmp > 0) {
-                      // 2. Rabt takes from the leading edge (up to its limit)
-                      const rabtPref = Number(planData.rabt_pages) || 0;
-                      const rabtSize = Math.min(rabtPref, tmp);
-                      if (rabtSize > 0) {
-                        const rabtOffset = tmp - rabtSize; // always the leading sequence
-                        rabtContent = getOffsetContent(rootStartPage, rabtOffset, rabtSize, 0, planDirection);
-                      }
-
-                      // 3. Muraajaa slides through the remaining pool
-                      const poolMuraajaa = tmp - rabtSize;
-                      const muraajaaPref = Number(planData.muraajaa_pages) || 0;
-                      if (poolMuraajaa > 0 && muraajaaPref > 0) {
-                        // Slide the offset across the pool
-                        let baseOffset = ((activeDayNum - 1) * muraajaaPref) % poolMuraajaa;
-                        const mSize = Math.min(muraajaaPref, poolMuraajaa - baseOffset);
-                        if (mSize > 0) {
-                          muraajaaContent = getOffsetContent(rootStartPage, baseOffset, mSize, 0, planDirection);
-                        }
-                      }
-                    }
-                  }
+                  const { muraajaa: muraajaaContent, rabt: rabtContent } = normalizedPlanData
+                    ? getPlanSupportSessionContent(normalizedPlanData, planCompletedDays)
+                    : { muraajaa: null, rabt: null }
 
                   return (
                     <>
@@ -760,7 +725,7 @@ function ProfilePage() {
                       <div className="bg-white rounded-2xl border-2 overflow-hidden" style={{ borderColor: "#d8a35526" }}>
                         <div className="px-5 py-4 border-b border-[#d8a355]/20 flex items-center justify-between">
                           <h4 className="font-bold text-[#1a2332]">جدول الخطة</h4>
-                          <span className="text-xs text-neutral-400">{daily === 0.25 ? "ربع وجه يومياً" : daily === 0.5 ? "نصف وجه يومياً" : daily === 1 ? "وجه يومياً" : "وجهان يومياً"}</span>
+                          <span className="text-xs text-neutral-400">{daily === 0.25 ? "ربع وجه يومياً" : daily === 0.5 ? "نصف وجه يومياً" : daily === 1 ? "وجه يومياً" : daily === 2 ? "وجهان يومياً" : daily === 3 ? "ثلاثة أوجه يومياً" : `${daily} أوجه يومياً`}</span>
                         </div>
                         <div className="relative">
                           {/* خط التسلسل */}
@@ -839,40 +804,45 @@ function ProfilePage() {
                   <CardContent className="pt-2 md:pt-3 space-y-4 md:space-y-6">
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
                       {Array.from({ length: 30 }, (_, i) => i + 1).map((juzNum) => {
-                        const isCompleted = (studentData?.completed_juzs?.includes(juzNum) ?? false) || completedJuzs.has(juzNum);
-                        const isCurrent = (!isCompleted && currentJuzs.has(juzNum)) || (!!studentData?.current_juzs?.includes(juzNum) && !isCompleted);
+                        const juzProgress = juzProgressDetails.get(juzNum)
+                        const progressPercent = juzProgress ? Math.round(juzProgress.progressPercent * 10) / 10 : 0
+                        const isCompleted = (studentData?.completed_juzs?.includes(juzNum) ?? false) || completedJuzs.has(juzNum) || progressPercent >= 100;
+                        const isCurrent = (!isCompleted && progressPercent > 0) || ((!isCompleted && currentJuzs.has(juzNum)) || (!!studentData?.current_juzs?.includes(juzNum) && !isCompleted));
                         
                         let bgColor = "bg-white";
                         let borderColor = "border-[#d8a355]/20";
                         let textColor = "text-[#1a2332]/50";
-                        let Icon = BookOpen;
-                        let statusText = "غير محفوظ";
+                        let statusText = "لم يبدأ";
 
                         if (isCompleted) {
                           bgColor = "bg-[#d8a355]/10";
                           borderColor = "border-[#d8a355]";
                           textColor = "text-[#d8a355]";
-                          Icon = CheckCircle2;
                           statusText = "مكتمل";
                         } else if (isCurrent) {
-                          bgColor = "bg-[#1a2332]/5";
-                          borderColor = "border-[#1a2332]/30";
-                          textColor = "text-[#1a2332]";
-                          Icon = PlayCircle;
-                          statusText = "قيد الحفظ";
+                          bgColor = "bg-[#0f766e]/5";
+                          borderColor = "border-[#0f766e]/30";
+                          textColor = "text-[#0f766e]";
+                          statusText = `محفوظ ${progressPercent}%`;
                         }
 
                         return (
-                          <div key={juzNum} className={`relative flex flex-col items-center justify-center p-3 rounded-xl border ${borderColor} ${bgColor} transition-all hover:scale-105`}>
-                            <div className="absolute top-2 right-2">
-                              {isCompleted && <CheckCircle2 className="w-4 h-4 text-[#d8a355]" />}
-                              {isCurrent && <PlayCircle className="w-4 h-4 text-[#1a2332]" />}
-                            </div>
-                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${isCompleted ? 'bg-[#d8a355]/20' : (isCurrent ? 'bg-[#1a2332]/10' : 'bg-gray-100')}`}>
+                          <div key={juzNum} className={`relative flex flex-col items-center justify-center p-3 rounded-xl border ${borderColor} ${bgColor} transition-all hover:scale-[1.03]`}>
+                            <div className={`w-12 h-12 rounded-full flex items-center justify-center mb-2 ${isCompleted ? 'bg-[#d8a355]/20' : (isCurrent ? 'bg-[#0f766e]/10' : 'bg-gray-100')}`}>
                               <span className={`text-lg font-bold ${textColor}`}>{juzNum}</span>
                             </div>
                             <span className={`text-xs font-bold ${textColor}`}>الجزء {juzNum}</span>
-                            <span className="text-[10px] text-gray-500 mt-1">{statusText}</span>
+                            <div className="mt-2 w-full space-y-1">
+                              <div className="h-2 w-full overflow-hidden rounded-full bg-gray-100">
+                                <div
+                                  className={`h-full rounded-full transition-all ${isCompleted ? 'bg-[#d8a355]' : isCurrent ? 'bg-[#0f766e]' : 'bg-gray-200'}`}
+                                  style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }}
+                                />
+                              </div>
+                              <div className="text-center text-[10px] text-gray-500">
+                                <span>{statusText}</span>
+                              </div>
+                            </div>
                           </div>
                         );
                       })}

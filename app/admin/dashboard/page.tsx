@@ -43,6 +43,7 @@ import {
   Bell,
   ArrowRightLeft,
   BookMarked,
+  Eye,
 } from "lucide-react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { createClient } from "@/lib/supabase/client"

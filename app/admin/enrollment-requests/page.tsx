@@ -1,11 +1,12 @@
-﻿"use client";
+"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { SiteLoader } from "@/components/ui/site-loader"
-import { Copy, Check, ExternalLink, Lock, Unlock, Trash2, UserPlus, X, Loader2 } from "lucide-react";
+import { Copy, Check, ExternalLink, Lock, Unlock, Loader2 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -14,16 +15,133 @@ import Link from "next/link";
 import { supabase } from "@/lib/supabase-client";
 import { toast } from "@/hooks/use-toast";
 import { useAdminAuth } from "@/hooks/use-admin-auth"
-import { JUZ_START_PAGES, getAyahByPageFloat, getInclusiveEndAyah } from "@/lib/quran-data";
+import { getContiguousCompletedJuzRange, getJuzBoundsRange } from "@/lib/quran-data";
+import {
+  EnrollmentJuzReviewStatus,
+  EnrollmentJuzTestStatus,
+  filterReviewResultsByReviewRequestedJuzs,
+  getContiguousSelectedJuzRange,
+  getJuzNumbersFromAmount,
+  formatEnrollmentMemorizedAmount,
+  getNeedsMasteryJuzNumbers,
+  getPassedJuzNumbers,
+  getReviewRequestedJuzNumbers,
+  getTestableJuzNumbers,
+  isContiguousJuzSelection,
+  normalizeEnrollmentReviewResults,
+  normalizeSelectedJuzs,
+  normalizeEnrollmentTestResults,
+} from "@/lib/enrollment-test-utils"
 
-function formatMemorizedAmount(amount?: string) {
-  if (!amount) return "-";
-  if (amount.includes("-")) {
-    const [from, to] = amount.split("-");
-    if (from === to) return `الجزء ${from}`;
-    return `من الجزء ${from} إلى الجزء ${to}`;
+const TEST_RESULTS_STORAGE_PREFIX = "enrollment-test-results:";
+
+function getTestResultsStorageKey(requestId: string) {
+  return `${TEST_RESULTS_STORAGE_PREFIX}${requestId}`;
+}
+
+function loadSavedTestResults(requestId: string) {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = window.localStorage.getItem(getTestResultsStorageKey(requestId));
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw) as {
+      hasReviewedTest?: boolean;
+      juzTestResults?: Record<number, EnrollmentJuzTestStatus>;
+      juzReviewResults?: Record<number, EnrollmentJuzReviewStatus>;
+    };
+
+    return {
+      hasReviewedTest: Boolean(parsed?.hasReviewedTest),
+      juzTestResults: normalizeEnrollmentTestResults(parsed?.juzTestResults),
+      juzReviewResults: normalizeEnrollmentReviewResults(parsed?.juzReviewResults),
+    };
+  } catch {
+    return null;
   }
-  return amount; // fallback
+}
+
+function saveTestResults(
+  requestId: string,
+  juzTestResults: Record<number, EnrollmentJuzTestStatus>,
+  juzReviewResults: Record<number, EnrollmentJuzReviewStatus>,
+) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    getTestResultsStorageKey(requestId),
+    JSON.stringify({ hasReviewedTest: true, juzTestResults, juzReviewResults }),
+  );
+}
+
+function clearSavedTestResults(requestId: string) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.removeItem(getTestResultsStorageKey(requestId));
+}
+
+function buildDefaultTestResults(juzNumbers: number[], currentResults?: Record<number, EnrollmentJuzTestStatus>) {
+  return juzNumbers.reduce<Record<number, EnrollmentJuzTestStatus>>((accumulator, juzNumber) => {
+    accumulator[juzNumber] = currentResults?.[juzNumber] || "pass"
+    return accumulator
+  }, {})
+}
+
+function formatMemorizedDisplay(amount?: string | null, selectedJuzs?: number[] | null) {
+  const normalizedSelectedJuzs = normalizeSelectedJuzs(selectedJuzs)
+
+  if (normalizedSelectedJuzs.length > 0) {
+    return `الأجزاء ${normalizedSelectedJuzs.join(",")}`
+  }
+
+  return formatEnrollmentMemorizedAmount(amount, selectedJuzs)
+}
+
+function getReadableErrorMessage(error: unknown) {
+  if (!error) return "حدث خطأ غير معروف";
+
+  if (typeof error === "string") return error;
+
+  if (error instanceof Error) {
+    return error.message || "حدث خطأ غير معروف";
+  }
+
+  if (typeof error === "object") {
+    const candidate = error as {
+      message?: string;
+      error?: string;
+      details?: string;
+      hint?: string;
+      code?: string;
+    };
+
+    return candidate.message || candidate.error || candidate.details || candidate.hint || candidate.code || JSON.stringify(candidate);
+  }
+
+  return String(error);
+}
+
+async function getResponsePayload(response: Response) {
+  const rawText = await response.text();
+
+  if (!rawText) return null;
+
+  try {
+    return JSON.parse(rawText);
+  } catch {
+    return rawText;
+  }
+}
+
+function hasPendingEnrollmentReview(
+  testResults?: Record<number, EnrollmentJuzTestStatus>,
+  reviewResults?: Record<number, EnrollmentJuzReviewStatus>,
+) {
+  const reviewRequestedJuzs = getReviewRequestedJuzNumbers(testResults);
+  if (reviewRequestedJuzs.length === 0) return false;
+
+  return reviewRequestedJuzs.some((juzNumber) => !reviewResults?.[juzNumber]);
 }
 
 interface EnrollmentRequest {
@@ -33,7 +151,11 @@ interface EnrollmentRequest {
   id_number: string;
   educational_stage: string;
   memorized_amount?: string;
+  selected_juzs?: number[];
   created_at: string;
+  test_reviewed?: boolean | null;
+  juz_test_results?: Record<number, EnrollmentJuzTestStatus>;
+  juz_review_results?: Record<number, EnrollmentJuzReviewStatus>;
 }
 
 export default function EnrollmentRequestsPage() {
@@ -46,6 +168,14 @@ export default function EnrollmentRequestsPage() {
   const [isStatusLoading, setIsStatusLoading] = useState(false);
   const [circles, setCircles] = useState<any[]>([]);
   const [acceptRequest, setAcceptRequest] = useState<EnrollmentRequest | null>(null);
+  const [isAccepting, setIsAccepting] = useState(false);
+  const [isTestDialogOpen, setIsTestDialogOpen] = useState(false);
+  const [isReviewDialogOpen, setIsReviewDialogOpen] = useState(false);
+  const [hasReviewedTest, setHasReviewedTest] = useState(false);
+  const [juzTestResults, setJuzTestResults] = useState<Record<number, EnrollmentJuzTestStatus>>({});
+  const [juzReviewResults, setJuzReviewResults] = useState<Record<number, EnrollmentJuzReviewStatus>>({});
+  const [draftJuzReviewResults, setDraftJuzReviewResults] = useState<Record<number, EnrollmentJuzReviewStatus>>({});
+  const [isReviewInfoOpen, setIsReviewInfoOpen] = useState(false);
   const [acceptForm, setAcceptForm] = useState({
     name: "",
     phone: "",
@@ -53,6 +183,7 @@ export default function EnrollmentRequestsPage() {
     account_number: "",
     educational_stage: "",
     memorized_amount: "",
+    selected_juzs: [] as number[],
     circle_id: "",
   });
 
@@ -64,7 +195,51 @@ export default function EnrollmentRequestsPage() {
     fetchCircles();
   }, []);
 
+  const persistRequestTestResults = async (
+    requestId: string,
+    nextJuzTestResults: Record<number, EnrollmentJuzTestStatus>,
+    nextJuzReviewResults: Record<number, EnrollmentJuzReviewStatus>,
+  ) => {
+    const { error } = await supabase
+      .from("enrollment_requests")
+      .update({
+        test_reviewed: true,
+        juz_test_results: nextJuzTestResults,
+        juz_review_results: nextJuzReviewResults,
+      })
+      .eq("id", requestId);
+
+    if (error) {
+      throw error;
+    }
+
+    setRequests((current) => current.map((request) => (
+      request.id === requestId
+        ? {
+            ...request,
+            test_reviewed: true,
+            juz_test_results: nextJuzTestResults,
+            juz_review_results: nextJuzReviewResults,
+          }
+        : request
+    )));
+  };
+
   const handleOpenAccept = (req: EnrollmentRequest) => {
+    const initialJuzResults = buildDefaultTestResults(
+      getTestableJuzNumbers(req.selected_juzs, req.memorized_amount),
+    )
+    const savedTestResults = loadSavedTestResults(req.id);
+    const persistedTestResults = Object.keys(req.juz_test_results || {}).length > 0
+      ? buildDefaultTestResults(getTestableJuzNumbers(req.selected_juzs, req.memorized_amount), req.juz_test_results || {})
+      : buildDefaultTestResults(
+          getTestableJuzNumbers(req.selected_juzs, req.memorized_amount),
+          savedTestResults?.juzTestResults || initialJuzResults,
+        );
+    const persistedReviewResults = Object.keys(req.juz_review_results || {}).length > 0
+      ? filterReviewResultsByReviewRequestedJuzs(persistedTestResults, req.juz_review_results)
+      : filterReviewResultsByReviewRequestedJuzs(persistedTestResults, savedTestResults?.juzReviewResults);
+
     setAcceptRequest(req);
     setAcceptForm({
       name: req.full_name,
@@ -73,8 +248,15 @@ export default function EnrollmentRequestsPage() {
       account_number: req.id_number,
       educational_stage: req.educational_stage,
       memorized_amount: req.memorized_amount || "",
+      selected_juzs: normalizeSelectedJuzs(req.selected_juzs),
       circle_id: "",
     });
+    setJuzTestResults(persistedTestResults);
+    setJuzReviewResults(persistedReviewResults);
+    setDraftJuzReviewResults(persistedReviewResults);
+    setHasReviewedTest(Boolean(req.test_reviewed) || savedTestResults?.hasReviewedTest || false);
+    setIsTestDialogOpen(false);
+    setIsReviewDialogOpen(false);
   };
 
   const handleConfirmAccept = async () => {
@@ -83,50 +265,95 @@ export default function EnrollmentRequestsPage() {
       toast({ title: "خطأ", description: "الرجاء اختيار الحلقة", variant: "destructive" });
       return;
     }
+
+    const selectedCircle = circles.find((circle) => String(circle.id) === String(acceptForm.circle_id));
+    if (!selectedCircle?.name) {
+      toast({ title: "خطأ", description: "تعذر تحديد اسم الحلقة", variant: "destructive" });
+      return;
+    }
     
-    let memorizedStartSurah = null;
-    let memorizedStartVerse = null;
-    let memorizedEndSurah = null;
-    let memorizedEndVerse = null;
+    const normalizedSelectedJuzs = normalizeSelectedJuzs(acceptForm.selected_juzs);
+    const contiguousSelectedRange = getContiguousSelectedJuzRange(normalizedSelectedJuzs);
+    const parsedAmountRange = getJuzNumbersFromAmount(acceptForm.memorized_amount);
 
-    if (acceptForm.memorized_amount && acceptForm.memorized_amount.includes("-")) {
-      const [fromJuzStr, toJuzStr] = acceptForm.memorized_amount.split("-");
-      const fromJuz = parseInt(fromJuzStr, 10);
-      const toJuz = parseInt(toJuzStr, 10);
-
-      if (!isNaN(fromJuz) && !isNaN(toJuz) && fromJuz >= 1 && toJuz <= 30) {
-        // Find correct start and end positions accurately using page boundaries
-        const startPage = JUZ_START_PAGES[fromJuz - 1] || 1;
-        const endPage = JUZ_START_PAGES[toJuz] ? JUZ_START_PAGES[toJuz] - 1 : 604;
-
-        const startRef = getAyahByPageFloat(startPage);
-        const endRef = getInclusiveEndAyah(endPage + 1);
-
-        memorizedStartSurah = startRef.surah;
-        memorizedStartVerse = startRef.ayah;
-        memorizedEndSurah = endRef.surah;
-        memorizedEndVerse = endRef.ayah;
-      }
+    if (!hasReviewedTest && normalizedSelectedJuzs.length > 0 && !isContiguousJuzSelection(normalizedSelectedJuzs)) {
+      toast({ title: "خطأ", description: "المحفوظ المتفرق يحتاج إلى اختبار أو عرض قبل قبول الطالب", variant: "destructive" });
+      return;
     }
 
-    // insert into students
-    const { error: insertError } = await supabase.from("students").insert({
-      name: acceptForm.name,
-      phone: acceptForm.phone,
-      id_number: acceptForm.id_number,
-      account_number: acceptForm.account_number,
-      educational_stage: acceptForm.educational_stage,
-      circle_id: acceptForm.circle_id,
-      is_archived: false,
-      memorized_start_surah: memorizedStartSurah,
-      memorized_start_verse: memorizedStartVerse,
-      memorized_end_surah: memorizedEndSurah,
-      memorized_end_verse: memorizedEndVerse,
-    // delete request
-    await supabase.from("enrollment_requests").delete().eq("id", acceptRequest.id);
-    setRequests(requests.filter(r => r.id !== acceptRequest.id));
-    setAcceptRequest(null);
-    toast({ title: "نجاح", description: "تم قبول الطالب بنجاح" });
+    const defaultRangeBounds = contiguousSelectedRange
+      ? getJuzBoundsRange(contiguousSelectedRange.fromJuz, contiguousSelectedRange.toJuz)
+      : parsedAmountRange.length > 0
+        ? getJuzBoundsRange(parsedAmountRange[0], parsedAmountRange[parsedAmountRange.length - 1])
+        : null;
+    const declaredPassedJuzs = normalizedSelectedJuzs.length > 0 ? normalizedSelectedJuzs : parsedAmountRange;
+    const passedJuzs = hasReviewedTest
+      ? getPassedJuzNumbers(juzTestResults, juzReviewResults)
+      : declaredPassedJuzs;
+    const masteryJuzs = hasReviewedTest ? getNeedsMasteryJuzNumbers(juzTestResults, juzReviewResults) : [];
+    const derivedCompletedRange = isContiguousJuzSelection(passedJuzs)
+      ? getContiguousCompletedJuzRange(passedJuzs)
+      : null;
+
+    if (reviewRequestedJuzCount > 0 && isReviewPending) {
+      toast({ title: "خطأ", description: "يجب إكمال العرض وتحديد نتيجة كل جزء قبل تأكيد القبول", variant: "destructive" });
+      return;
+    }
+
+    setIsAccepting(true);
+    try {
+      const response = await fetch("/api/students", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: acceptForm.name,
+          circle_name: selectedCircle.name,
+          id_number: acceptForm.id_number,
+          guardian_phone: acceptForm.phone,
+          account_number: Number.parseInt(acceptForm.account_number, 10),
+          initial_points: 0,
+          memorized_start_surah: derivedCompletedRange?.startSurahNumber ?? defaultRangeBounds?.startSurahNumber ?? null,
+          memorized_start_verse: derivedCompletedRange?.startVerseNumber ?? defaultRangeBounds?.startVerseNumber ?? null,
+          memorized_end_surah: derivedCompletedRange?.endSurahNumber ?? defaultRangeBounds?.endSurahNumber ?? null,
+          memorized_end_verse: derivedCompletedRange?.endVerseNumber ?? defaultRangeBounds?.endVerseNumber ?? null,
+          completed_juzs: passedJuzs.length > 0 ? passedJuzs : undefined,
+          current_juzs: masteryJuzs.length > 0 ? masteryJuzs : undefined,
+        }),
+      });
+
+      const result = await getResponsePayload(response);
+
+      if (!response.ok) {
+        const errorMessage = typeof result === "object" && result !== null && "error" in result
+          ? getReadableErrorMessage((result as { error?: unknown }).error)
+          : getReadableErrorMessage(result);
+        console.error("Enrollment accept insert error:", errorMessage, result);
+        toast({ title: "خطأ", description: errorMessage || "تعذر قبول الطالب", variant: "destructive" });
+        return;
+      }
+
+      const { error: deleteError } = await supabase.from("enrollment_requests").delete().eq("id", acceptRequest.id);
+      if (deleteError) {
+        console.error("Enrollment request delete error:", deleteError);
+        toast({ title: "تنبيه", description: "تم إنشاء الطالب ولكن تعذر حذف الطلب من القائمة", variant: "destructive" });
+        return;
+      }
+
+      setRequests(requests.filter(r => r.id !== acceptRequest.id));
+      clearSavedTestResults(acceptRequest.id);
+      setAcceptRequest(null);
+      setIsTestDialogOpen(false);
+      toast({
+        title: "نجاح",
+        description: hasReviewedTest
+          ? `تم قبول الطالب وحفظ ${passedJuzs.length} جزء ناجح${masteryJuzs.length > 0 ? `، و${masteryJuzs.length} جزء يحتاج إلى إتقان` : ""}`
+          : passedJuzs.length > 0
+            ? `تم قبول الطالب وحفظ ${passedJuzs.length} جزء`
+            : "تم قبول الطالب بنجاح",
+      });
+    } finally {
+      setIsAccepting(false);
+    }
   };
 
   useEffect(() => {
@@ -188,7 +415,13 @@ export default function EnrollmentRequestsPage() {
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setRequests(data || []);
+      setRequests((data || []).map((request: any) => ({
+        ...request,
+        selected_juzs: normalizeSelectedJuzs(request.selected_juzs),
+        test_reviewed: Boolean(request.test_reviewed),
+        juz_test_results: normalizeEnrollmentTestResults(request.juz_test_results),
+        juz_review_results: normalizeEnrollmentReviewResults(request.juz_review_results),
+      })));
     } catch (error: any) {
       console.error("Error fetching requests:", error);
       toast({ title: "حدث خطأ أثناء جلب طلبات التسجيل", variant: "destructive" });
@@ -206,6 +439,7 @@ export default function EnrollmentRequestsPage() {
         
       if (error) throw error;
       
+      clearSavedTestResults(id);
       setRequests(requests.filter(req => req.id !== id));
       toast({ title: "تم حذف الطلب بنجاح" });
     } catch (error: any) {
@@ -222,200 +456,469 @@ export default function EnrollmentRequestsPage() {
     setTimeout(() => setCopiedLink(false), 3000);
   };
 
-    if (authLoading || !authVerified) return <SiteLoader fullScreen />;
+  const testableJuzs = useMemo(
+    () => getTestableJuzNumbers(acceptForm.selected_juzs, acceptForm.memorized_amount),
+    [acceptForm.memorized_amount, acceptForm.selected_juzs],
+  );
+  const reviewRequestedJuzs = useMemo(
+    () => getReviewRequestedJuzNumbers(juzTestResults),
+    [juzTestResults],
+  );
+  const passedJuzCount = getPassedJuzNumbers(juzTestResults, juzReviewResults).length;
+  const masteryJuzCount = getNeedsMasteryJuzNumbers(juzTestResults, juzReviewResults).length;
+  const reviewRequestedJuzCount = reviewRequestedJuzs.length;
+  const isReviewPending = hasPendingEnrollmentReview(juzTestResults, juzReviewResults);
+  const requiresReviewedTest = testableJuzs.length > 0;
+  const isAcceptReady = Boolean(acceptForm.circle_id) && !isReviewPending && (!requiresReviewedTest || hasReviewedTest);
 
-  return (
-    <div className="min-h-screen flex flex-col bg-[#f8f9fa] dir-rtl font-cairo">
-      <Header />
-      
-      <main className="flex-grow container mx-auto px-4 py-8 max-w-7xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
-          <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-3xl font-bold text-[#1a2332]">طلبات التسجيل</h1>
-            </div>
-            <p className="text-neutral-500">
-              قائمة بالطلاب الذين قاموا بطلب التسجيل عبر الرابط
-            </p>
+	if (authLoading || !authVerified) return <SiteLoader fullScreen />;
+
+	return (
+		<div className="min-h-screen flex flex-col bg-[#f6f7f9] font-cairo" dir="rtl">
+			<Header />
+
+			<main className="flex-grow">
+				<div className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-8">
+					<section className="rounded-[28px] border border-[#D4AF37]/15 bg-white px-5 py-6 shadow-sm md:px-8">
+						<div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+							<div className="space-y-3">
+								<div className="space-y-2">
+									<h1 className="text-3xl font-bold text-[#1a2332]">طلبات التسجيل</h1>
+									<p className="max-w-2xl text-sm leading-7 text-neutral-500 md:text-base">
+										متابعة الطلبات الواردة، تنفيذ الاختبار والعرض، ثم اعتماد الطالب مباشرة داخل الحلقة المناسبة.
+									</p>
+								</div>
+							</div>
+
+							<div className="flex flex-wrap items-center gap-3 lg:justify-end">
+								<button
+									onClick={toggleEnrollmentStatus}
+									disabled={isStatusLoading}
+									className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-semibold transition-all ${
+										isEnrollmentOpen
+											? "border-red-200 bg-red-50 text-red-700 hover:bg-red-100"
+											: "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+									}`}
+									title={isEnrollmentOpen ? "إيقاف استقبال طلبات التسجيل" : "تفعيل استقبال طلبات التسجيل"}
+								>
+									{isStatusLoading ? (
+										<Loader2 className="h-5 w-5 animate-spin" />
+									) : isEnrollmentOpen ? (
+										<Lock className="h-5 w-5" />
+									) : (
+										<Unlock className="h-5 w-5" />
+									)}
+									<span>{isEnrollmentOpen ? "إقفال التسجيل" : "فتح التسجيل"}</span>
+								</button>
+
+								<button
+									onClick={copyEnrollmentLink}
+									className="inline-flex items-center gap-2 rounded-2xl bg-[#D4AF37] px-4 py-3 text-sm font-semibold text-white shadow-sm transition-all hover:bg-[#c59f28]"
+								>
+									{copiedLink ? <Check className="h-5 w-5" /> : <Copy className="h-5 w-5" />}
+									<span>نسخ الرابط</span>
+								</button>
+
+								<Link
+									href="/enroll"
+									target="_blank"
+                  className="inline-flex items-center justify-center rounded-2xl border border-[#D4AF37]/40 bg-white px-4 py-3 text-sm font-semibold text-[#D4AF37] transition-all hover:bg-[#D4AF37]/5"
+									title="معاينة نموذج التسجيل"
+								>
+									<ExternalLink className="h-5 w-5" />
+								</Link>
+							</div>
+						</div>
+					</section>
+
+					<section className="overflow-hidden rounded-[28px] border border-[#D4AF37]/15 bg-white shadow-sm">
+						<div className="flex items-center justify-between border-b border-[#D4AF37]/10 px-5 py-4 md:px-6">
+							<div>
+								<h2 className="text-lg font-bold text-[#1a2332]">قائمة الطلبات</h2>
+								<p className="text-sm text-neutral-500">كل طلب يحتوي على بيانات الطالب وخيارات القبول أو الرفض.</p>
+							</div>
+						</div>
+
+						{loading ? (
+							<div className="flex min-h-[320px] items-center justify-center">
+								<SiteLoader />
+							</div>
+						) : requests.length === 0 ? (
+							<div className="flex min-h-[320px] flex-col items-center justify-center px-6 text-center">
+								<p className="text-xl font-semibold text-neutral-400">لا توجد طلبات تسجيل حتى الآن</p>
+								<p className="mt-2 text-sm text-neutral-500">عند وصول طلبات جديدة ستظهر هنا تلقائيًا.</p>
+							</div>
+						) : (
+							<div className="overflow-x-auto">
+								<table className="w-full min-w-[980px] text-right">
+									<thead className="bg-[#f8f3e7] text-[#023232]">
+										<tr>
+											<th className="px-6 py-4 font-semibold">الاسم الثلاثي</th>
+											<th className="px-6 py-4 font-semibold">رقم ولي الأمر</th>
+											<th className="px-6 py-4 font-semibold">رقم الهوية</th>
+											<th className="px-6 py-4 font-semibold">المرحلة الدراسية</th>
+											<th className="px-6 py-4 font-semibold">المحفوظ</th>
+											<th className="px-6 py-4 font-semibold">تاريخ الطلب</th>
+											<th className="px-6 py-4 font-semibold">الإجراءات</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-[#D4AF37]/10">
+										{requests.map((request) => (
+											<tr key={request.id} className="transition-colors hover:bg-[#D4AF37]/5">
+												<td className="px-6 py-4 align-top font-medium text-gray-900">
+													<div className="flex min-w-[180px] flex-col gap-2">
+														<span className="font-semibold text-[#1a2332]">{request.full_name}</span>
+														{Boolean(request.test_reviewed) && hasPendingEnrollmentReview(request.juz_test_results, request.juz_review_results) && (
+															<span className="inline-flex w-fit rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+																في انتظار العرض
+															</span>
+														)}
+													</div>
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-right text-gray-600 dir-ltr">
+													{request.guardian_phone}
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-right text-gray-600 dir-ltr">
+													{request.id_number}
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-gray-600">
+													{request.educational_stage}
+												</td>
+												<td className="px-6 py-4 text-gray-600">
+                          {formatMemorizedDisplay(request.memorized_amount, request.selected_juzs)}
+												</td>
+												<td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+													{new Date(request.created_at).toLocaleString("ar-SA", {
+														year: "numeric",
+														month: "short",
+														day: "numeric",
+														hour: "2-digit",
+														minute: "2-digit",
+													})}
+												</td>
+												<td className="px-6 py-4">
+													<div className="flex items-center justify-center gap-2">
+														<button
+															onClick={() => handleOpenAccept(request)}
+															className="rounded-xl bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100"
+															title="قبول"
+														>
+															قبول
+														</button>
+														<button
+															onClick={() => deleteRequest(request.id)}
+															className="rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700 transition-colors hover:bg-red-100"
+															title="رفض"
+														>
+															رفض
+														</button>
+													</div>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+					</section>
+				</div>
+			</main>
+
+      <Dialog open={!!acceptRequest} onOpenChange={(open) => {
+				if (!open) {
+					setAcceptRequest(null)
+					setIsReviewDialogOpen(false)
+					setIsTestDialogOpen(false)
+					setDraftJuzReviewResults({})
+				}
+			}}>
+        <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden border-[#D4AF37]/20 p-0 [&>button]:hidden" dir="rtl">
+					<DialogHeader className="border-b border-[#D4AF37]/10 bg-[#fbf8ef] px-6 py-5 text-right">
+						<DialogTitle className="text-xl text-[#1a2332]">قبول الطالب</DialogTitle>
+					</DialogHeader>
+
+          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+						<div className="grid gap-4 md:grid-cols-2">
+							<div className="grid gap-2">
+								<Label>الاسم</Label>
+								<Input value={acceptForm.name} onChange={(e) => setAcceptForm({ ...acceptForm, name: e.target.value })} />
+							</div>
+							<div className="grid gap-2">
+								<Label>رقم الجوال</Label>
+								<Input value={acceptForm.phone} onChange={(e) => setAcceptForm({ ...acceptForm, phone: e.target.value })} />
+							</div>
+							<div className="grid gap-2">
+								<Label>رقم الهوية</Label>
+								<Input value={acceptForm.id_number} onChange={(e) => setAcceptForm({ ...acceptForm, id_number: e.target.value })} />
+							</div>
+							<div className="grid gap-2">
+								<Label>رقم الحساب</Label>
+								<Input value={acceptForm.account_number} onChange={(e) => setAcceptForm({ ...acceptForm, account_number: e.target.value })} />
+							</div>
+							<div className="grid gap-2 md:col-span-2">
+								<Label>المرحلة الدراسية</Label>
+								<Input value={acceptForm.educational_stage} onChange={(e) => setAcceptForm({ ...acceptForm, educational_stage: e.target.value })} />
+							</div>
+						</div>
+
+						<div className="rounded-2xl border border-[#D4AF37]/15 bg-[#fcfbf7] p-4">
+							<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+								<div className="space-y-1">
+									<Label>المحفوظ</Label>
+                  <div className="flex min-h-11 items-center rounded-xl border border-input bg-white px-3 text-sm text-gray-600 shadow-sm">
+                    {formatMemorizedDisplay(acceptForm.memorized_amount, acceptForm.selected_juzs) || "غير محدد"}
+                  </div>
+								</div>
+								<Button
+									type="button"
+									variant="outline"
+                  className="h-10 shrink-0 border-[#D4AF37]/30"
+									disabled={testableJuzs.length === 0}
+									onClick={() => setIsTestDialogOpen(true)}
+								>
+									اختبار المحفوظ
+								</Button>
+							</div>
+
+							{hasReviewedTest && testableJuzs.length > 0 && (
+								<div className="mt-4 space-y-3 rounded-2xl bg-white p-4">
+									<p className="text-sm font-semibold text-emerald-700">
+										تم اعتماد نتائج الاختبار: {passedJuzCount} من {testableJuzs.length} أجزاء ناجحة
+									</p>
+
+									{reviewRequestedJuzCount > 0 && (
+                    <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                      <p className="text-sm font-medium text-amber-800">
+												هناك {reviewRequestedJuzCount} جزء تم تحويله إلى العرض.
+											</p>
+											<Button
+												type="button"
+												variant="outline"
+                        className="h-9 border-amber-300 px-3 text-sm text-amber-800 hover:bg-amber-50"
+												onClick={() => {
+													setDraftJuzReviewResults(filterReviewResultsByReviewRequestedJuzs(juzTestResults, juzReviewResults))
+													setIsReviewDialogOpen(true)
+												}}
+											>
+                        العرض
+											</Button>
+										</div>
+									)}
+								</div>
+							)}
+						</div>
+
+						<div className="grid gap-2">
+							<Label>تحديد الحلقة</Label>
+							<Select value={acceptForm.circle_id} onValueChange={(val) => setAcceptForm({ ...acceptForm, circle_id: val })}>
+								<SelectTrigger className="h-11">
+									<SelectValue placeholder="اختر الحلقة" />
+								</SelectTrigger>
+								<SelectContent>
+									{circles.map((c) => (
+										<SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+
+            {requiresReviewedTest && !hasReviewedTest && (
+              <p className="text-sm font-medium text-amber-700">
+                يجب حفظ نتائج الاختبار أولاً قبل تفعيل تأكيد القبول.
+              </p>
+            )}
+					</div>
+
+          <DialogFooter className="gap-2 border-t border-[#D4AF37]/10 bg-white px-6 py-4 sm:space-x-0">
+						<Button variant="outline" onClick={() => setAcceptRequest(null)}>إلغاء</Button>
+						<Button
+              disabled={isAccepting || !isAcceptReady}
+							onClick={handleConfirmAccept}
+              className="bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-emerald-600 disabled:text-white disabled:opacity-35 disabled:pointer-events-none"
+						>
+							{isAccepting ? "جارٍ الحفظ..." : "تأكيد القبول"}
+						</Button>
+          </DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+      <Dialog open={isTestDialogOpen} onOpenChange={setIsTestDialogOpen}>
+        <DialogContent className="flex max-h-[85vh] max-w-xl flex-col overflow-hidden border-[#D4AF37]/20 p-0 [&>button]:hidden" dir="rtl">
+					<DialogHeader className="border-b border-[#D4AF37]/10 bg-[#fbf8ef] px-6 py-5 text-right">
+						<DialogTitle className="text-xl text-[#1a2332]">اختبار المحفوظ</DialogTitle>
+						<DialogDescription className="leading-7 text-neutral-600">
+							حدِّد نتيجة كل جزء داخل المدى المختار، وسيتم حفظ الأجزاء الناجحة في ملف الطالب.
+						</DialogDescription>
+					</DialogHeader>
+
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
+            {testableJuzs.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+                لا يوجد مدى محفوظ قابل للاختبار.
+              </div>
+            ) : (
+              testableJuzs.map((juzNumber) => (
+                <div key={juzNumber} className="flex items-center justify-between gap-3 rounded-xl border border-[#D4AF37]/20 px-3 py-3">
+                  <div>
+                    <p className="font-semibold text-[#1a2332]">الجزء {juzNumber}</p>
+                  </div>
+                  <Select
+                    value={juzTestResults[juzNumber] || "pass"}
+                    onValueChange={(value: EnrollmentJuzTestStatus) => setJuzTestResults((prev) => ({ ...prev, [juzNumber]: value }))}
+                  >
+                    <SelectTrigger className="w-[130px]">
+                      <SelectValue placeholder="اختر النتيجة" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pass">ناجح</SelectItem>
+                      <SelectItem value="fail">راسب</SelectItem>
+                      <SelectItem value="review">عرض</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))
+            )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-3 mt-4 md:mt-0">
-            <button
-              onClick={toggleEnrollmentStatus}
-              disabled={isStatusLoading}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm ${
-                isEnrollmentOpen 
-                  ? "bg-red-50 text-red-600 border border-red-200 hover:bg-red-100" 
-                  : "bg-green-50 text-green-600 border border-green-200 hover:bg-green-100"
-              }`}
-              title={isEnrollmentOpen ? "إيقاف استقبال طلبات التسجيل" : "تفعيل استقبال طلبات التسجيل"}
-            >
-              {isStatusLoading ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : isEnrollmentOpen ? (
-                <Lock className="w-5 h-5" />
-              ) : (
-                <Unlock className="w-5 h-5" />
-              )}
-              <span className="hidden sm:inline">
-                {isEnrollmentOpen ? "إقفال التسجيل" : "فتح التسجيل"}
-              </span>
-            </button>
-            <button
-              onClick={copyEnrollmentLink}
-              className="flex items-center gap-2 bg-[#D4AF37] hover:bg-[#C9A961] text-white px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm"
-            >
-              {copiedLink ? <Check className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
-              <span className="hidden sm:inline">نسخ الرابط</span>
-            </button>
-            <Link
-              href="/enroll"
-              target="_blank"
-              className="flex items-center gap-2 bg-white border border-[#D4AF37] text-[#D4AF37] hover:bg-[#D4AF37]/5 px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm"
-              title="معاينة نموذج التسجيل"
-            >
-              <ExternalLink className="w-5 h-5" />
-            </Link>
-          </div>
-        </div>
+					<DialogFooter className="gap-2 border-t border-[#D4AF37]/10 bg-white px-6 py-4 sm:space-x-0">
+            <Button variant="outline" onClick={() => setIsTestDialogOpen(false)}>إغلاق</Button>
+            <Button
+              onClick={async () => {
+                if (!acceptRequest) return
 
-        <div className="bg-white rounded-2xl shadow-sm border border-[#D4AF37]/20 overflow-hidden">
-          {loading ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <SiteLoader />
-            </div>
-          ) : requests.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <p className="text-xl text-neutral-400">لا توجد طلبات تسجيل حتى الآن</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-right">
-                <thead className="bg-[#f5f1e8] text-[#023232]">
-                  <tr>
-                    <th className="px-6 py-4 font-semibold first:rounded-tr-2xl">الاسم الثلاثي</th>
-                    <th className="px-6 py-4 font-semibold">رقم ولي الأمر</th>
-                    <th className="px-6 py-4 font-semibold">رقم الهوية</th>
-                    <th className="px-6 py-4 font-semibold">المرحلة الدراسية</th>
-                    <th className="px-6 py-4 font-semibold">المحفوظ</th>
-                    <th className="px-6 py-4 font-semibold">تاريخ الطلب</th>
-                    <th className="px-6 py-4 font-semibold last:rounded-tl-2xl">إجراءات</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#D4AF37]/10">
-                  {requests.map((request) => (
-                    <tr
-                      key={request.id}
-                      className="hover:bg-[#D4AF37]/5 transition-colors"
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap font-medium text-gray-900">
-                        {request.full_name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dir-ltr text-right">
-                        {request.guardian_phone}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-600 dir-ltr text-right">
-                        {request.id_number}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                        {request.educational_stage}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-600">
-                          {formatMemorizedAmount(request.memorized_amount)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-gray-500 text-sm">
-                        {new Date(request.created_at).toLocaleString("ar-SA", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-center">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleOpenAccept(request)}
-                            className="p-1.5 text-green-600 hover:bg-green-50 rounded-md transition-colors"
-                            title="قبول"
-                          >
-                            <UserPlus className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => deleteRequest(request.id)}
-                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            title="رفض"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </main>
+                const normalizedTestResults = buildDefaultTestResults(testableJuzs, juzTestResults)
+                const nextReviewResults = filterReviewResultsByReviewRequestedJuzs(normalizedTestResults, juzReviewResults)
 
-      <Dialog open={!!acceptRequest} onOpenChange={(open) => !open && setAcceptRequest(null)}>
-        <DialogContent className="max-w-md max-h-[90vh] flex flex-col" dir="rtl">
-          <DialogHeader>
-            <DialogTitle>قبول الطالب</DialogTitle>
-            <DialogDescription>
-              الرجاء مراجعة البيانات واختيار حلقة للطالب قبل القبول.
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="grid gap-4 py-4 flex-1 overflow-y-auto pr-2 custom-scrollbar">
-            <div className="grid gap-2">
-              <Label>الاسم</Label>
-              <Input value={acceptForm.name} onChange={(e) => setAcceptForm({ ...acceptForm, name: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>رقم الجوال</Label>
-              <Input value={acceptForm.phone} onChange={(e) => setAcceptForm({ ...acceptForm, phone: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>رقم الهوية</Label>
-              <Input value={acceptForm.id_number} onChange={(e) => setAcceptForm({ ...acceptForm, id_number: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>رقم الحساب</Label>
-              <Input value={acceptForm.account_number} onChange={(e) => setAcceptForm({ ...acceptForm, account_number: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>المرحلة الدراسية</Label>
-              <Input value={acceptForm.educational_stage} onChange={(e) => setAcceptForm({ ...acceptForm, educational_stage: e.target.value })} />
-            </div>
-            <div className="grid gap-2">
-              <Label>المحفوظ</Label>
-              <Input value={formatMemorizedAmount(acceptForm.memorized_amount) || "غير محدد"} readOnly className="bg-gray-50 bg-opacity-50 text-gray-500 cursor-default" />
-            </div>
-            <div className="grid gap-2">
-              <Label>تحديد الحلقة</Label>
-              <Select value={acceptForm.circle_id} onValueChange={(val) => setAcceptForm({ ...acceptForm, circle_id: val })}>
-                <SelectTrigger>
-                  <SelectValue placeholder="اختر الحلقة" />
-                </SelectTrigger>
-                <SelectContent>
-                  {circles.map((c) => (
-                    <SelectItem key={c.id} value={c.id.toString()}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          
-          <DialogFooter className="gap-2 sm:space-x-0 mt-2">
-            <Button variant="outline" onClick={() => setAcceptRequest(null)}>إلغاء</Button>
-            <Button onClick={handleConfirmAccept} className="bg-emerald-600 hover:bg-emerald-700 text-white">تأكيد القبول</Button>
+                try {
+                  await persistRequestTestResults(acceptRequest.id, normalizedTestResults, nextReviewResults)
+                  saveTestResults(acceptRequest.id, normalizedTestResults, nextReviewResults)
+                  setJuzTestResults(normalizedTestResults)
+                  setJuzReviewResults(nextReviewResults)
+                  setHasReviewedTest(true)
+                  setIsTestDialogOpen(false)
+                  toast({ title: "نجاح", description: "تم حفظ نتائج الاختبار" })
+                } catch (error) {
+                  const errorMessage = getReadableErrorMessage(error)
+                  console.error("Failed to save enrollment test results:", errorMessage, error)
+                  toast({ title: "خطأ", description: errorMessage || "تعذر حفظ نتائج الاختبار", variant: "destructive" })
+                }
+              }}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              حفظ نتائج الاختبار
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Footer />
-    </div>
-  );
+			<Dialog open={isReviewDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setDraftJuzReviewResults(filterReviewResultsByReviewRequestedJuzs(juzTestResults, juzReviewResults))
+        }
+        setIsReviewDialogOpen(open)
+      }}>
+				<DialogContent className="flex max-h-[85vh] max-w-xl flex-col overflow-hidden border-[#D4AF37]/20 p-0 [&>button]:hidden" dir="rtl">
+					<DialogHeader className="border-b border-[#D4AF37]/10 bg-[#fbf8ef] px-6 py-5 text-right">
+						<DialogTitle className="flex items-center justify-start gap-2 text-xl text-[#1a2332]">
+							<span>العرض</span>
+              <Popover open={isReviewInfoOpen} onOpenChange={setIsReviewInfoOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-[#D4AF37] text-[10px] font-bold text-white shadow-sm"
+                    aria-label="توضيح نتائج العرض"
+                    onMouseEnter={() => setIsReviewInfoOpen(true)}
+                    onMouseLeave={() => setIsReviewInfoOpen(false)}
+                    onFocus={() => setIsReviewInfoOpen(true)}
+                    onBlur={() => setIsReviewInfoOpen(false)}
+                  >
+                    !
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  side="bottom"
+                  className="w-[320px] rounded-2xl border border-[#D4AF37]/30 bg-white px-4 py-3 text-right text-sm leading-7 text-[#1a2332] shadow-xl"
+                  onMouseEnter={() => setIsReviewInfoOpen(true)}
+                  onMouseLeave={() => setIsReviewInfoOpen(false)}
+                >
+                  <p><span className="font-bold text-emerald-700">ناجح:</span> يُعتبر كمحفوظ.</p>
+                  <p><span className="font-bold text-red-700">راسب:</span> إعادة الحفظ بشكل كامل.</p>
+                  <p><span className="font-bold text-sky-700">إتقان:</span> إعادة الحفظ بشكل كامل ولكن بعدد أوجه أكثر (تُعرض أجزاء الإتقان عند إضافة خطة للطالب).</p>
+                </PopoverContent>
+              </Popover>
+						</DialogTitle>
+						<DialogDescription className="leading-7 text-neutral-600">
+							قيّم الأجزاء المحوّلة إلى العرض لهذا الطالب قبل تأكيد القبول.
+						</DialogDescription>
+					</DialogHeader>
+
+          <div className="flex-1 space-y-3 overflow-y-auto px-6 py-5">
+						{reviewRequestedJuzs.length === 0 ? (
+							<div className="rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500">
+								لا توجد أجزاء محوّلة إلى العرض.
+							</div>
+						) : (
+							reviewRequestedJuzs.map((juzNumber) => (
+								<div key={juzNumber} className="flex items-center justify-between gap-3 rounded-2xl border border-[#D4AF37]/20 bg-[#fcfbf7] px-4 py-4">
+									<div>
+										<p className="font-semibold text-[#1a2332]">الجزء {juzNumber}</p>
+									</div>
+									<Select
+										value={draftJuzReviewResults[juzNumber]}
+										onValueChange={(value: EnrollmentJuzReviewStatus) => setDraftJuzReviewResults((prev) => ({ ...prev, [juzNumber]: value }))}
+									>
+										<SelectTrigger className="w-[150px] bg-white">
+											<SelectValue placeholder="اختر النتيجة" />
+										</SelectTrigger>
+										<SelectContent>
+											<SelectItem value="pass">ناجح</SelectItem>
+											<SelectItem value="fail">راسب</SelectItem>
+											<SelectItem value="needs_mastery">اتقان</SelectItem>
+										</SelectContent>
+									</Select>
+								</div>
+							))
+						)}
+					</div>
+
+					<DialogFooter className="gap-2 border-t border-[#D4AF37]/10 bg-white px-6 py-4 sm:space-x-0">
+						<Button variant="outline" onClick={() => setIsReviewDialogOpen(false)}>إغلاق</Button>
+						<Button
+							onClick={async () => {
+								if (!acceptRequest) return
+
+								const nextReviewResults = filterReviewResultsByReviewRequestedJuzs(juzTestResults, draftJuzReviewResults)
+								const hasMissingResults = reviewRequestedJuzs.some((juzNumber) => !nextReviewResults[juzNumber])
+
+								if (hasMissingResults) {
+									toast({ title: "خطأ", description: "يجب تحديد نتيجة كل جزء محوّل إلى العرض", variant: "destructive" })
+									return
+								}
+
+								try {
+									await persistRequestTestResults(acceptRequest.id, juzTestResults, nextReviewResults)
+									saveTestResults(acceptRequest.id, juzTestResults, nextReviewResults)
+									setJuzReviewResults(nextReviewResults)
+									setDraftJuzReviewResults(nextReviewResults)
+									setHasReviewedTest(true)
+									setIsReviewDialogOpen(false)
+									toast({ title: "نجاح", description: "تم حفظ نتائج العرض" })
+								} catch (error) {
+									const errorMessage = getReadableErrorMessage(error)
+									console.error("Failed to save enrollment review results:", errorMessage, error)
+									toast({ title: "خطأ", description: errorMessage || "تعذر حفظ نتائج العرض", variant: "destructive" })
+								}
+							}}
+							className="bg-emerald-600 text-white hover:bg-emerald-700"
+						>
+							حفظ العرض
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+
+			<Footer />
+		</div>
+	);
 }

@@ -1,18 +1,23 @@
-"use client";
+﻿"use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase-client";
 import { toast } from "@/hooks/use-toast";
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { SiteLoader } from "@/components/ui/site-loader"
-import { User, Phone, Hash, GraduationCap, BookOpen, UserPlus } from "lucide-react";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { User, Phone, Hash, GraduationCap, BookOpen, UserPlus, ChevronDown } from "lucide-react";
+import { formatEnrollmentMemorizedAmount, getContiguousSelectedJuzRange } from "@/lib/enrollment-test-utils";
+
+const ALL_JUZS = Array.from({ length: 30 }, (_, index) => index + 1);
 
 export default function EnrollPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isEnrollmentOpen, setIsEnrollmentOpen] = useState(true);
   const [isLoadingStatus, setIsLoadingStatus] = useState(true);
+  const [isMemorizedDialogOpen, setIsMemorizedDialogOpen] = useState(false);
   
   useEffect(() => {
     const fetchEnrollmentStatus = async () => {
@@ -40,49 +45,83 @@ export default function EnrollPage() {
     guardianPhone: "",
     idNumber: "",
     educationalStage: "",
-    memorizedFrom: "",
-    memorizedTo: "",
+    selectedJuzs: [] as number[],
   });
 
+  const memorizedSummary = useMemo(
+    () => formatEnrollmentMemorizedAmount(undefined, formData.selectedJuzs),
+    [formData.selectedJuzs],
+  );
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name } = e.target;
+    let value = e.target.value;
+    
+    // Only allow numbers for ID and Phone
+    if (name === "idNumber" || name === "guardianPhone") {
+      value = value.replace(/\D/g, "");
+    }
+
+    setFormData((current) => ({ ...current, [name]: value }));
+  };
+
+  const toggleJuzSelection = (juzNumber: number) => {
+    setFormData((current) => {
+      const selectedJuzs = current.selectedJuzs.includes(juzNumber)
+        ? current.selectedJuzs.filter((item) => item !== juzNumber)
+        : [...current.selectedJuzs, juzNumber].sort((left, right) => left - right);
+
+      return {
+        ...current,
+        selectedJuzs,
+      };
+    });
+  };
+
+  const clearSelectedJuzs = () => {
+    setFormData((current) => ({
+      ...current,
+      selectedJuzs: [],
+    }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isEnrollmentOpen) {
-      toast({ title: "عذراً، التسجيل مغلق حالياً", variant: "destructive" });
+      toast({ title: "عذرًا، التسجيل مغلق حاليًا", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
 
     try {
+      const contiguousRange = getContiguousSelectedJuzRange(formData.selectedJuzs);
       const { error } = await supabase.from("enrollment_requests").insert([
         {
           full_name: formData.fullName,
           guardian_phone: formData.guardianPhone,
           id_number: formData.idNumber,
           educational_stage: formData.educationalStage,
-          memorized_amount: formData.memorizedFrom && formData.memorizedTo ? `${formData.memorizedFrom}-${formData.memorizedTo}` : "",
+          memorized_amount: contiguousRange ? `${contiguousRange.fromJuz}-${contiguousRange.toJuz}` : "",
+          selected_juzs: formData.selectedJuzs,
         },
       ]);
 
       if (error) throw error;
 
-      toast({ title: "تم إرسال طلب الإلتحاق بنجاح!", variant: "default" });
+      toast({ title: "تم إرسال طلب الالتحاق بنجاح!", variant: "default" });
       setFormData({
         fullName: "",
         guardianPhone: "",
         idNumber: "",
         educationalStage: "",
-        memorizedFrom: "",
-        memorizedTo: "",
+        selectedJuzs: [],
       });
+      setIsMemorizedDialogOpen(false);
       setIsSuccess(true);
       setTimeout(() => setIsSuccess(false), 3000);
       // Optionally redirect or show a success message
     } catch (error: any) {
-      console.error("Error submitting request:", error);
+      console.error('Error submitting request:', JSON.stringify(error, null, 2)); console.error('Error raw:', error);
       toast({ title: error.message || "حدث خطأ أثناء إرسال الطلب", variant: "destructive" });
     } finally {
       setIsSubmitting(false);
@@ -96,7 +135,7 @@ export default function EnrollPage() {
       <main className="flex-grow flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full">
           <div className="text-center mb-6 md:mb-8">
-            <h1 className="text-2xl md:text-4xl font-bold text-[#023232] mb-2 md:mb-3">طلب الإلتحاق بالمجمع</h1>
+            <h1 className="text-2xl md:text-4xl font-bold text-[#023232] mb-2 md:mb-3">طلب الالتحاق بالمجمع</h1>
           </div>
 
           <div className="bg-white rounded-2xl shadow-xl overflow-hidden border-2 border-[#d8a355]/30 relative p-6 md:p-8">
@@ -112,7 +151,7 @@ export default function EnrollPage() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                   </svg>
                 </div>
-                <h3 className="text-xl font-bold text-red-600 mb-2">عذراً، التسجيل مغلق حالياً</h3>
+                <h3 className="text-xl font-bold text-red-600 mb-2">عذرًا، التسجيل مغلق حاليًا</h3>
                 <p className="text-gray-500">تم إيقاف التسجيل في المجمع في الوقت الحالي.</p>
               </div>
             ) : (
@@ -125,7 +164,7 @@ export default function EnrollPage() {
                       </svg>
                     </div>
                     <h3 className="text-xl font-bold text-[#023232] mb-2">تم الإرسال بنجاح!</h3>
-                    <p className="text-gray-500">سيتم التواصل معك قريباً.</p>
+                    <p className="text-gray-500">سيتم التواصل معك قريبًا.</p>
                   </div>
                 )}
 
@@ -155,7 +194,8 @@ export default function EnrollPage() {
                   type="tel"
                   id="guardianPhone"
                   name="guardianPhone"
-                  required
+                    maxLength={10}
+                    required
                   value={formData.guardianPhone}
                   onChange={handleChange}
                   className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors text-right"
@@ -173,7 +213,8 @@ export default function EnrollPage() {
                   type="text"
                   id="idNumber"
                   name="idNumber"
-                  required
+                    maxLength={10}
+                    required
                   value={formData.idNumber}
                   onChange={handleChange}
                   className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors"
@@ -204,43 +245,15 @@ export default function EnrollPage() {
                   <BookOpen className="w-4 h-4 text-[#d8a355]" />
                   المحفوظ <span className="text-red-500">*</span>
                 </label>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label htmlFor="memorizedFrom" className="text-xs text-gray-500 block mb-1">من الجزء</label>
-                    <select
-                      id="memorizedFrom"
-                      name="memorizedFrom"
-                      required
-                      value={formData.memorizedFrom}
-                      onChange={handleChange}
-                      className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors bg-white"
-                    >
-                      <option value="" disabled>اختر بداية الحفظ</option>
-                      {Array.from({ length: 30 }, (_, i) => i + 1).map((juz) => (
-                        <option key={juz} value={juz.toString()}>
-                          الجزء {juz}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label htmlFor="memorizedTo" className="text-xs text-gray-500 block mb-1">إلى الجزء</label>
-                    <select
-                      id="memorizedTo"
-                      name="memorizedTo"
-                      required
-                      value={formData.memorizedTo}
-                      onChange={handleChange}
-                      className="w-full h-12 px-4 text-base border-2 border-gray-200 rounded-lg focus:ring-0 focus:border-[#d8a355] outline-none transition-colors bg-white"
-                    >
-                      <option value="" disabled>اختر نهاية الحفظ</option>
-                      {Array.from({ length: 30 }, (_, i) => i + 1).map((juz) => (
-                        <option key={juz} value={juz.toString()}>
-                          الجزء {juz}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                <div className="space-y-3 rounded-xl border-2 border-gray-200 p-3">
+                  <button
+                    type="button"
+                    onClick={() => setIsMemorizedDialogOpen(true)}
+                    className="flex h-12 w-full items-center justify-between rounded-lg border border-[#d8a355]/40 bg-[#fcfbf9] px-4 text-base text-[#023232] transition-colors hover:bg-[#f8f2e7]"
+                  >
+                    <span>{formData.selectedJuzs.length === 0 ? "لا يوجد حفظ سابق" : memorizedSummary}</span>
+                    <ChevronDown className="h-4 w-4 text-[#b88a2c]" />
+                  </button>
                 </div>
               </div>
 
@@ -269,6 +282,67 @@ export default function EnrollPage() {
       </main>
 
       <Footer />
+
+      <Dialog open={isMemorizedDialogOpen} onOpenChange={setIsMemorizedDialogOpen}>
+        <DialogContent className="max-w-[92vw] sm:max-w-[620px] rounded-2xl border-[#d8a355]/30 p-0" dir="rtl">
+          <DialogHeader className="border-b border-[#d8a355]/20 bg-[#fffcf6] px-5 py-4 text-right">
+            <DialogTitle className="text-right text-lg font-bold text-[#023232]">اختيار المحفوظ</DialogTitle>
+            <DialogDescription className="text-right text-sm text-gray-500">
+              اختر الأجزاء التي يحفظها الطالب، حتى لو كانت متفرقة.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 px-5 py-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-semibold text-[#023232]">
+                {formData.selectedJuzs.length === 0 ? "لا يوجد حفظ سابق" : memorizedSummary}
+              </p>
+              {formData.selectedJuzs.length > 0 && (
+                <button
+                  type="button"
+                  onClick={clearSelectedJuzs}
+                  className="text-xs font-semibold text-red-600 transition-colors hover:text-red-700"
+                >
+                  مسح التحديد
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {ALL_JUZS.map((juzNumber) => {
+                const isSelected = formData.selectedJuzs.includes(juzNumber);
+
+                return (
+                  <label
+                    key={juzNumber}
+                    className={`plan-history-checkbox w-full justify-between rounded-2xl border px-4 py-3 text-[#1a2332] transition-colors ${isSelected ? "border-[#d8a355] bg-[#fff7e7]" : "border-gray-200 bg-white hover:border-[#d8a355]/45"}`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleJuzSelection(juzNumber)}
+                    />
+                    <span className="plan-history-checkbox__label text-base font-bold leading-none">{juzNumber}</span>
+                    <span className="plan-history-checkbox__mark" aria-hidden="true" />
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsMemorizedDialogOpen(false)}
+                className="h-11 rounded-xl bg-[#d8a355] px-5 text-sm font-semibold text-white transition-colors hover:bg-[#c99743]"
+              >
+                تم
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+

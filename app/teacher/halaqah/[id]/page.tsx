@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog"
 import { Textarea } from "@/components/ui/textarea"
 import { useAlertDialog } from "@/hooks/use-confirm-dialog"
 import { SiteLoader } from "@/components/ui/site-loader"
-import { getActivePlanDayNumber, getAyahByPageFloat, getInclusiveEndAyah, getPlanSessionContent, resolvePlanTotalDays, resolvePlanTotalPages, SURAHS } from "@/lib/quran-data"
+import { getActivePlanDayNumber, getPlanSessionContent, getPlanSupportSessionContent, resolvePlanTotalDays, resolvePlanTotalPages, SURAHS } from "@/lib/quran-data"
 import { type AttendanceStatus, isEvaluatedAttendance, isNonEvaluatedAttendance } from "@/lib/student-attendance"
 
 type EvaluationLevel = "excellent" | "very_good" | "good" | "not_completed" | null
@@ -81,16 +81,23 @@ interface MissedDayRecord {
 interface StudentPlan {
 	student_id: string
 	start_surah_number: number
+	start_verse?: number | null
 	end_surah_number: number
+	end_verse?: number | null
 	daily_pages: number
 	total_pages: number
 	total_days: number
 	direction?: "asc" | "desc"
 	has_previous?: boolean
 	prev_start_surah?: number | null
+	prev_start_verse?: number | null
 	prev_end_surah?: number | null
+	prev_end_verse?: number | null
+	completed_juzs?: number[] | null
 	muraajaa_pages?: number | null
 	rabt_pages?: number | null
+	start_date?: string | null
+	created_at?: string | null
 }
 
 interface PlanProgressResponse {
@@ -114,111 +121,16 @@ const getKsaDateString = () => {
 	return `${year}-${month}-${day}`
 }
 
-const buildReadingContent = (sessionStart: number, size: number): EvaluationContent | null => {
-	if (size <= 0) return null
-
-	const sessionEnd = Math.min(sessionStart + size, 605)
-	const startRef = getAyahByPageFloat(Math.max(1, sessionStart))
-	const endRef = getInclusiveEndAyah(sessionEnd)
-	const startSurahName = SURAHS.find((surah) => surah.number === startRef.surah)?.name
-	const endSurahName = SURAHS.find((surah) => surah.number === endRef.surah)?.name
-
-	if (!startSurahName || !endSurahName) return null
-
-	return {
-		fromSurah: startSurahName,
-		fromVerse: String(startRef.ayah),
-		toSurah: endSurahName,
-		toVerse: String(endRef.ayah),
-	}
-}
-
-const getSessionReadingContent = (
-	planStartPage: number,
-	dailyPages: number,
-	sessionNum: number,
-	totalPages: number,
-	direction: "asc" | "desc",
-) => {
-	const sessionStart = direction === "desc"
-		? planStartPage + totalPages - sessionNum * dailyPages
-		: planStartPage + (sessionNum - 1) * dailyPages
-
-	return buildReadingContent(sessionStart, dailyPages)
-}
-
-const getOffsetReadingContent = (
-	planStartPage: number,
-	offset: number,
-	size: number,
-	totalPages: number,
-	direction: "asc" | "desc",
-) => {
-	const sessionStart = direction === "desc"
-		? planStartPage + totalPages - offset - size
-		: planStartPage + offset
-
-	return buildReadingContent(sessionStart, size)
-}
-
 const getPlanReadingDetails = (plan: StudentPlan | null, completedDays: number): ReadingDetails => {
 	if (!plan) return {}
 
-	const daily = Number(plan.daily_pages) || 0
-	const totalPages = resolvePlanTotalPages(plan)
 	const totalDays = resolvePlanTotalDays(plan)
-	const direction = plan.direction || "asc"
-	const startSurahData = SURAHS.find((surah) => surah.number === Math.min(plan.start_surah_number, plan.end_surah_number))
-	const planStartPage = startSurahData?.startPage || 1
 	const activeDayNum = getActivePlanDayNumber(totalDays, completedDays, plan.start_date, plan.created_at)
 
 	const hafiz = getPlanSessionContent(plan, activeDayNum)
-
-	let samaa: EvaluationContent | null = null
-	let rabet: EvaluationContent | null = null
-
-	const rootSurahNum = plan.prev_start_surah || plan.start_surah_number
-	const rootSurah = SURAHS.find((surah) => surah.number === rootSurahNum)
-
-	if (rootSurah) {
-		const rootStartPage = rootSurah.startPage
-		let previousVolume = 0
-
-		if (plan.has_previous && plan.prev_start_surah && plan.prev_end_surah) {
-			const previousStart = SURAHS.find((surah) => surah.number === plan.prev_start_surah)
-			const previousEnd = SURAHS.find((surah) => surah.number === plan.prev_end_surah)
-			if (previousStart && previousEnd) {
-				let endPage = 605
-				if (previousEnd.number < 114) {
-					const nextSurah = SURAHS.find((surah) => surah.number === previousEnd.number + 1)
-					if (nextSurah) endPage = nextSurah.startPage
-				}
-				previousVolume = Math.abs(endPage - previousStart.startPage)
-			}
-		}
-
-		const completedCurrentPlanPages = (activeDayNum - 1) * daily
-		const totalMemorizedPool = previousVolume + completedCurrentPlanPages
-
-		if (totalMemorizedPool > 0) {
-			const rabtPref = Number(plan.rabt_pages) || 0
-			const rabtSize = Math.min(rabtPref, totalMemorizedPool)
-			if (rabtSize > 0) {
-				const rabtOffset = totalMemorizedPool - rabtSize
-				rabet = getOffsetReadingContent(rootStartPage, rabtOffset, rabtSize, 0, direction)
-			}
-
-			const muraajaaPool = totalMemorizedPool - rabtSize
-			const muraajaaPref = Number(plan.muraajaa_pages) || 0
-			if (muraajaaPool > 0 && muraajaaPref > 0) {
-				const baseOffset = ((activeDayNum - 1) * muraajaaPref) % muraajaaPool
-				const muraajaaSize = Math.min(muraajaaPref, muraajaaPool - baseOffset)
-				if (muraajaaSize > 0) {
-					samaa = getOffsetReadingContent(rootStartPage, baseOffset, muraajaaSize, 0, direction)
-				}
-			}
-		}
-	}
+	const supportContent = getPlanSupportSessionContent(plan, completedDays)
+	const samaa = supportContent.muraajaa
+	const rabet = supportContent.rabt
 
 	return {
 		...(hafiz ? { hafiz } : {}),
@@ -228,6 +140,10 @@ const getPlanReadingDetails = (plan: StudentPlan | null, completedDays: number):
 }
 
 const formatReadingDetails = (details?: EvaluationContent | null) => {
+	if (details?.text?.trim()) {
+		return details.text
+	}
+
 	if (!details?.fromSurah || !details?.fromVerse || !details?.toSurah || !details?.toVerse) {
 		return null
 	}

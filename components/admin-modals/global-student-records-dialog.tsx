@@ -121,8 +121,8 @@ export function GlobalStudentRecordsDialog() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleClose}>
-      <DialogContent className="max-w-4xl w-[95vw] md:w-full min-h-[50vh] max-h-[90vh] flex flex-col bg-white rounded-2xl p-0 overflow-hidden [&>button]:top-4 [&>button]:right-4 [&>button]:left-auto [&::-webkit-scrollbar]:hidden" dir="rtl">
-        <DialogHeader className="px-6 py-5 border-b border-[#D4AF37]/30 bg-gradient-to-r from-[#D4AF37]/8 to-transparent text-right shrink-0">
+      <DialogContent className="max-w-[92vw] md:max-w-[980px] w-full min-h-[60vh] max-h-[88vh] flex flex-col bg-white rounded-2xl p-0 overflow-hidden [&>button]:top-4 [&>button]:right-4 [&>button]:left-auto [&::-webkit-scrollbar]:hidden" dir="rtl">
+        <DialogHeader className="px-5 py-4 border-b border-[#D4AF37]/30 bg-gradient-to-r from-[#D4AF37]/8 to-transparent text-right shrink-0">
           <DialogTitle className="flex w-full justify-start pr-8 text-right text-lg font-bold text-[#1a2332]">
             <span className="inline-flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-[#D4AF37]/15 border border-[#D4AF37]/30 flex items-center justify-center text-[#D4AF37]">
@@ -135,8 +135,8 @@ export function GlobalStudentRecordsDialog() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="px-6 py-5 space-y-5 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="px-5 py-4 space-y-4 flex-1 overflow-y-auto [&::-webkit-scrollbar]:hidden">
+          <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-sm font-medium text-neutral-600">الحلقة</Label>
               <Select value={selectedCircle} onValueChange={(val) => { setSelectedCircle(val); setSelectedStudent(""); setRecords([]); }}>
@@ -168,12 +168,12 @@ export function GlobalStudentRecordsDialog() {
 
           {selectedStudent && (
             <div className="border border-[#D4AF37]/20 rounded-xl overflow-hidden shadow-sm bg-white">
-              <div className="bg-[#fcfbf9] px-4 py-3 border-b border-[#D4AF37]/10 flex items-center gap-2">
+              <div className="bg-[#fcfbf9] px-4 py-2.5 border-b border-[#D4AF37]/10 flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-[#D4AF37]" />
                 <h3 className="font-semibold text-sm text-[#1a2332]">سجل التقييمات والحضور</h3>
               </div>
               
-              <div className="max-h-[60vh] overflow-y-auto overflow-x-auto [&::-webkit-scrollbar]:hidden">
+              <div className="max-h-[56vh] overflow-y-auto overflow-x-auto [&::-webkit-scrollbar]:hidden px-3 py-2">
                 {isLoadingRecords ? (
                   <div className="flex justify-center items-center py-10">
                     <SiteLoader size="sm" />
@@ -183,41 +183,41 @@ export function GlobalStudentRecordsDialog() {
                     لا توجد سجلات سابقة لهذا الطالب
                   </div>
                 ) : (
-                  <table className="w-full text-right text-sm">
+                  <table className="w-fit min-w-full mx-auto table-auto text-right text-sm">
                     <thead className="bg-[#faf9f6]/80 text-[#1a2332] sticky top-0 backdrop-blur-sm shadow-[0_1px_2px_rgba(0,0,0,0.05)] border-b border-[#D4AF37]/20">
                       <tr>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap">التاريخ</th>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">الحالة</th>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">حفظ</th>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">تكرار</th>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">مراجعة</th>
-                        <th className="px-4 py-2.5 font-medium whitespace-nowrap text-center">ربط</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap">التاريخ</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap text-center">الحالة</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap text-center">حفظ</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap text-center">تكرار</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap text-center">مراجعة</th>
+                        <th className="px-3 py-2 font-medium whitespace-nowrap text-center">ربط</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#D4AF37]/10 text-neutral-600">
                       {records.map((record) => (
                         <tr key={record.id} className="hover:bg-[#fcfbf9] transition-colors">
-                          <td className="px-4 py-3 whitespace-nowrap text-xs tabular-nums text-neutral-800">{new Date(record.date).toLocaleDateString("en-GB")}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center">{getStatusBadge(record.status)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">
-                            <div className="flex flex-col items-center gap-1">
+                          <td className="px-3 py-2.5 whitespace-nowrap text-xs tabular-nums text-neutral-800">{new Date(record.date).toLocaleDateString("en-GB")}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center">{getStatusBadge(record.status)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">
+                            <div className="flex flex-col items-center gap-0.5">
                               {getLevelLabel(record.hafiz_level)}
                               {formatReadingRange(record.hafiz_from_surah, record.hafiz_from_verse, record.hafiz_to_surah, record.hafiz_to_verse) && (
                                 <span className="text-[10px] leading-4 text-neutral-500">{formatReadingRange(record.hafiz_from_surah, record.hafiz_from_verse, record.hafiz_to_surah, record.hafiz_to_verse)}</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">{getLevelLabel(record.tikrar_level)}</td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">
-                            <div className="flex flex-col items-center gap-1">
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">{getLevelLabel(record.tikrar_level)}</td>
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">
+                            <div className="flex flex-col items-center gap-0.5">
                               {getLevelLabel(record.samaa_level)}
                               {formatReadingRange(record.samaa_from_surah, record.samaa_from_verse, record.samaa_to_surah, record.samaa_to_verse) && (
                                 <span className="text-[10px] leading-4 text-neutral-500">{formatReadingRange(record.samaa_from_surah, record.samaa_from_verse, record.samaa_to_surah, record.samaa_to_verse)}</span>
                               )}
                             </div>
                           </td>
-                          <td className="px-4 py-3 whitespace-nowrap text-center text-xs">
-                            <div className="flex flex-col items-center gap-1">
+                          <td className="px-3 py-2.5 whitespace-nowrap text-center text-xs">
+                            <div className="flex flex-col items-center gap-0.5">
                               {getLevelLabel(record.rabet_level)}
                               {formatReadingRange(record.rabet_from_surah, record.rabet_from_verse, record.rabet_to_surah, record.rabet_to_verse) && (
                                 <span className="text-[10px] leading-4 text-neutral-500">{formatReadingRange(record.rabet_from_surah, record.rabet_from_verse, record.rabet_to_surah, record.rabet_to_verse)}</span>

@@ -13,14 +13,17 @@ import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from "@
 import { Badge } from "@/components/ui/badge"
 import { useConfirmDialog } from "@/hooks/use-confirm-dialog"
 import { BookMarked, Plus, Trash2, Target, Users, ChevronDown, Check } from "lucide-react"
-import { SURAHS, calculateTotalDays, calculateTotalPages, getPlanMemorizedRange } from "@/lib/quran-data"
+import { SURAHS, calculateTotalDays, calculateTotalPages, getContiguousCompletedJuzRange, getJuzBounds, getJuzNumbersForPageRange, getNextAyahReference, hasScatteredCompletedJuzs, getPageFloatForAyah, getPlanMemorizedRange, getSurahJuzNumbers, resolvePlanTotalDays, resolvePlanTotalPages } from "@/lib/quran-data"
 import { getSaudiDateString } from "@/lib/saudi-time"
+import { formatJuzList } from "@/lib/enrollment-test-utils"
 
 interface Student {
   id: string
   name: string
   halaqah: string
   account_number: number
+  completed_juzs?: number[]
+  current_juzs?: number[]
   memorized_start_surah?: number | null
   memorized_start_verse?: number | null
   memorized_end_surah?: number | null
@@ -52,14 +55,15 @@ interface StudentPlan {
 }
 
 const MURAAJAA_OPTIONS = [
-  { value: "20", label: "جزء واحد (20 وجه)" },
-  { value: "40", label: "جزئين (40 وجه)" },
-  { value: "60", label: "3 أجزاء (60 وجه)" },
+  { value: "20", label: "جزء واحد" },
+  { value: "40", label: "جزئين" },
+  { value: "60", label: "3 أجزاء" },
 ]
 
 const RABT_OPTIONS = [
-  { value: "10", label: "10 أوجه" },
-  { value: "20", label: "جزء واحد (20 وجه)" },
+  { value: "10", label: "نصف جزء" },
+  { value: "20", label: "جزء واحد" },
+  { value: "40", label: "جزئين" },
 ]
 
 const DAILY_OPTIONS = [
@@ -67,6 +71,7 @@ const DAILY_OPTIONS = [
   { value: "0.5", label: "نصف وجه" },
   { value: "1", label: "وجه واحد" },
   { value: "2", label: "وجهان" },
+  { value: "3", label: "ثلاثة أوجه" },
 ]
 
 function dailyLabel(v: number) {
@@ -74,6 +79,7 @@ function dailyLabel(v: number) {
   if (v === 0.5) return "نصف وجه"
   if (v === 1) return "وجه واحد"
   if (v === 2) return "وجهان"
+  if (v === 3) return "ثلاثة أوجه"
   return `${v} وجه`
 }
 
@@ -175,16 +181,170 @@ function isStartAllowedAfterPrevious(
   return previousDirection === "desc" ? comparison <= 0 : comparison >= 0
 }
 
+function isAyahWithinRange(
+  surahNumber: number,
+  verseNumber: number,
+  rangeStartSurahNumber: number,
+  rangeStartVerseNumber: number,
+  rangeEndSurahNumber: number,
+  rangeEndVerseNumber: number,
+) {
+  const isAscendingRange = compareAyahRefs(
+    rangeStartSurahNumber,
+    rangeStartVerseNumber,
+    rangeEndSurahNumber,
+    rangeEndVerseNumber,
+  ) <= 0
+
+  const normalizedRangeStart = isAscendingRange
+    ? { surahNumber: rangeStartSurahNumber, verseNumber: rangeStartVerseNumber }
+    : { surahNumber: rangeEndSurahNumber, verseNumber: rangeEndVerseNumber }
+  const normalizedRangeEnd = isAscendingRange
+    ? { surahNumber: rangeEndSurahNumber, verseNumber: rangeEndVerseNumber }
+    : { surahNumber: rangeStartSurahNumber, verseNumber: rangeStartVerseNumber }
+
+  return compareAyahRefs(surahNumber, verseNumber, normalizedRangeStart.surahNumber, normalizedRangeStart.verseNumber) >= 0
+    && compareAyahRefs(surahNumber, verseNumber, normalizedRangeEnd.surahNumber, normalizedRangeEnd.verseNumber) <= 0
+}
+
+function getAdjustedPreviewRange({
+  startSurahNumber,
+  startVerseNumber,
+  endSurahNumber,
+  endVerseNumber,
+  dailyPages,
+  direction,
+  prevStartSurah,
+  prevStartVerse,
+  prevEndSurah,
+  prevEndVerse,
+  completedJuzs,
+}: {
+  startSurahNumber: number
+  startVerseNumber: number
+  endSurahNumber: number
+  endVerseNumber: number
+  dailyPages?: number
+  direction: "asc" | "desc"
+  prevStartSurah?: string
+  prevStartVerse?: string
+  prevEndSurah?: string
+  prevEndVerse?: string
+  completedJuzs?: number[]
+}) {
+  let adjustedStartSurahNumber = startSurahNumber
+  let adjustedStartVerseNumber = startVerseNumber
+
+  const nextStartFromPrevious = prevStartSurah && prevEndSurah && prevEndVerse
+    ? getNextStartFromPrevious(prevStartSurah, prevEndSurah, prevEndVerse)
+    : null
+
+  const isStartInsidePreviousRange = nextStartFromPrevious && prevStartSurah && prevEndSurah && prevEndVerse
+    ? isAyahWithinRange(
+        adjustedStartSurahNumber,
+        adjustedStartVerseNumber,
+        parseInt(prevStartSurah, 10),
+        prevStartVerse ? parseInt(prevStartVerse, 10) : 1,
+        parseInt(prevEndSurah, 10),
+        parseInt(prevEndVerse, 10),
+      )
+    : false
+
+  if (nextStartFromPrevious && isStartInsidePreviousRange) {
+    adjustedStartSurahNumber = nextStartFromPrevious.surahNumber
+    adjustedStartVerseNumber = nextStartFromPrevious.verseNumber
+  }
+
+  const selectedStartPage = getPageFloatForAyah(adjustedStartSurahNumber, adjustedStartVerseNumber)
+  const nextSelectedEndAyah = getNextAyahReference(endSurahNumber, endVerseNumber)
+  const selectedEndPage = nextSelectedEndAyah
+    ? getPageFloatForAyah(nextSelectedEndAyah.surah, nextSelectedEndAyah.ayah)
+    : 605
+  const selectedJuzs = getJuzNumbersForPageRange(selectedStartPage, selectedEndPage, direction)
+  const completedJuzSet = new Set(completedJuzs || [])
+  const leadingCompletedJuzs: number[] = []
+
+  for (const juzNumber of selectedJuzs) {
+    if (!completedJuzSet.has(juzNumber)) break
+    leadingCompletedJuzs.push(juzNumber)
+  }
+
+  if (leadingCompletedJuzs.length > 0 && leadingCompletedJuzs.length < selectedJuzs.length) {
+    const nextJuzNumber = selectedJuzs[leadingCompletedJuzs.length]
+    const nextJuzBounds = getJuzBounds(nextJuzNumber)
+
+    if (nextJuzBounds) {
+      if (direction === "desc") {
+        adjustedStartSurahNumber = nextJuzBounds.endSurahNumber
+        adjustedStartVerseNumber = nextJuzBounds.endVerseNumber
+      } else {
+        adjustedStartSurahNumber = nextJuzBounds.startSurahNumber
+        adjustedStartVerseNumber = nextJuzBounds.startVerseNumber
+      }
+    }
+  }
+
+  const totalPages = compareAyahRefs(adjustedStartSurahNumber, adjustedStartVerseNumber, endSurahNumber, endVerseNumber) <= 0
+    ? resolvePlanTotalPages({
+        start_surah_number: adjustedStartSurahNumber,
+        start_verse: adjustedStartVerseNumber,
+        end_surah_number: endSurahNumber,
+        end_verse: endVerseNumber,
+        direction,
+        has_previous: Boolean(prevStartSurah && prevEndSurah && prevEndVerse),
+        prev_start_surah: prevStartSurah ? parseInt(prevStartSurah, 10) : null,
+        prev_start_verse: prevStartVerse ? parseInt(prevStartVerse, 10) : null,
+        prev_end_surah: prevEndSurah ? parseInt(prevEndSurah, 10) : null,
+        prev_end_verse: prevEndVerse ? parseInt(prevEndVerse, 10) : null,
+        completed_juzs: completedJuzs,
+      })
+    : 0
+  const totalDays = totalPages > 0 && dailyPages
+    ? resolvePlanTotalDays({
+        start_surah_number: adjustedStartSurahNumber,
+        start_verse: adjustedStartVerseNumber,
+        end_surah_number: endSurahNumber,
+        end_verse: endVerseNumber,
+        total_pages: totalPages,
+        daily_pages: dailyPages,
+        direction,
+        has_previous: Boolean(prevStartSurah && prevEndSurah && prevEndVerse),
+        prev_start_surah: prevStartSurah ? parseInt(prevStartSurah, 10) : null,
+        prev_start_verse: prevStartVerse ? parseInt(prevStartVerse, 10) : null,
+        prev_end_surah: prevEndSurah ? parseInt(prevEndSurah, 10) : null,
+        prev_end_verse: prevEndVerse ? parseInt(prevEndVerse, 10) : null,
+        completed_juzs: completedJuzs,
+      })
+    : 0
+
+  return {
+    startSurahNumber: adjustedStartSurahNumber,
+    startVerseNumber: adjustedStartVerseNumber,
+    endSurahNumber,
+    endVerseNumber,
+    totalPages,
+    totalDays,
+  }
+}
+
 function getLockedPreviousRange(student: Student, plan: StudentPlan | null, completedDays: number) {
+  const completedJuzRange = hasScatteredCompletedJuzs(student.completed_juzs)
+    ? null
+    : getContiguousCompletedJuzRange(student.completed_juzs)
+  const memorizedStartSurah = hasScatteredCompletedJuzs(student.completed_juzs) ? null : student.memorized_start_surah
+  const memorizedStartVerse = hasScatteredCompletedJuzs(student.completed_juzs) ? null : student.memorized_start_verse
+  const memorizedEndSurah = hasScatteredCompletedJuzs(student.completed_juzs) ? null : student.memorized_end_surah
+  const memorizedEndVerse = hasScatteredCompletedJuzs(student.completed_juzs) ? null : student.memorized_end_verse
+
   if (plan && completedDays > 0) {
     const memorizedRange = getPlanMemorizedRange(
       {
         ...plan,
-        has_previous: plan.has_previous || !!(plan.prev_start_surah || student.memorized_start_surah),
-        prev_start_surah: plan.prev_start_surah || student.memorized_start_surah || null,
-        prev_start_verse: plan.prev_start_verse || student.memorized_start_verse || null,
-        prev_end_surah: plan.prev_end_surah || student.memorized_end_surah || null,
-        prev_end_verse: plan.prev_end_verse || student.memorized_end_verse || null,
+        has_previous: plan.has_previous || !!(plan.prev_start_surah || memorizedStartSurah || completedJuzRange?.startSurahNumber),
+        prev_start_surah: plan.prev_start_surah || memorizedStartSurah || completedJuzRange?.startSurahNumber || null,
+        prev_start_verse: plan.prev_start_verse || memorizedStartVerse || completedJuzRange?.startVerseNumber || null,
+        prev_end_surah: plan.prev_end_surah || memorizedEndSurah || completedJuzRange?.endSurahNumber || null,
+        prev_end_verse: plan.prev_end_verse || memorizedEndVerse || completedJuzRange?.endVerseNumber || null,
       },
       completedDays,
     )
@@ -194,11 +354,11 @@ function getLockedPreviousRange(student: Student, plan: StudentPlan | null, comp
     }
   }
 
-  const startSurahNumber = student.memorized_start_surah || plan?.prev_start_surah || null
-  const startVerseNumber = student.memorized_start_verse || plan?.prev_start_verse || 1
-  const endSurahNumber = student.memorized_end_surah || plan?.prev_end_surah || null
+  const startSurahNumber = memorizedStartSurah || plan?.prev_start_surah || completedJuzRange?.startSurahNumber || null
+  const startVerseNumber = memorizedStartVerse || plan?.prev_start_verse || completedJuzRange?.startVerseNumber || 1
+  const endSurahNumber = memorizedEndSurah || plan?.prev_end_surah || completedJuzRange?.endSurahNumber || null
   const endSurah = endSurahNumber ? SURAHS.find((surah) => surah.number === endSurahNumber) : null
-  const endVerseNumber = student.memorized_end_verse || plan?.prev_end_verse || endSurah?.verseCount || 1
+  const endVerseNumber = memorizedEndVerse || plan?.prev_end_verse || completedJuzRange?.endVerseNumber || endSurah?.verseCount || 1
 
   if (!startSurahNumber || !endSurahNumber) {
     if (!plan?.start_surah_number || !plan?.end_surah_number) {
@@ -328,11 +488,18 @@ export default function TeacherStudentPlansPage() {
     const lockedPreviousRange = getLockedPreviousRange(student, currentPlan, studentCompletedDays[student.id] || 0)
     const hasLockedPrevious = !!lockedPreviousRange
     const shouldLockPrevious = !!currentPlan || hasLockedPrevious
+    const nextPlanStart = lockedPreviousRange
+      ? getNextStartFromPrevious(
+          String(lockedPreviousRange.startSurahNumber),
+          String(lockedPreviousRange.endSurahNumber),
+          String(lockedPreviousRange.endVerseNumber),
+        )
+      : null
 
     setSelectedStudent(student)
-    setStartSurah("")
+    setStartSurah(nextPlanStart ? String(nextPlanStart.surahNumber) : "")
     setEndSurah("")
-    setStartVerse("")
+    setStartVerse(nextPlanStart ? String(nextPlanStart.verseNumber) : "")
     setEndVerse("")
     setDailyPages("1")
     setSaveMsg(null)
@@ -373,16 +540,15 @@ export default function TeacherStudentPlansPage() {
       }
 
       const normalizedStartVerse = startVerse ? parseInt(startVerse) : 1
-      const previousDirection = parseInt(prevStartSurah, 10) > parseInt(prevEndSurah, 10) ? "desc" : "asc"
-      if (
-        !isStartAllowedAfterPrevious(
-          startNum,
-          normalizedStartVerse,
-          nextStartFromPrevious.surahNumber,
-          nextStartFromPrevious.verseNumber,
-          previousDirection,
-        )
-      ) {
+      const startInsidePreviousRange = isAyahWithinRange(
+        startNum,
+        normalizedStartVerse,
+        parseInt(prevStartSurah, 10),
+        prevStartVerse ? parseInt(prevStartVerse, 10) : 1,
+        parseInt(prevEndSurah, 10),
+        parseInt(prevEndVerse, 10),
+      )
+      if (startInsidePreviousRange) {
         const expectedSurah = SURAHS.find((surah) => surah.number === nextStartFromPrevious.surahNumber)?.name || "السورة"
         setSaveMsg({
           type: "error",
@@ -399,13 +565,21 @@ export default function TeacherStudentPlansPage() {
 
     const startSurahData = SURAHS.find((surah) => surah.number === startNum)!
     const endSurahData = SURAHS.find((surah) => surah.number === endNum)!
-    const total = calculateTotalPages(
-      startNum,
-      endNum,
-      startVerse ? parseInt(startVerse) : null,
-      endVerse ? parseInt(endVerse) : null,
-    )
-    const days = calculateTotalDays(total, parseFloat(dailyPages))
+    const adjustedPreview = getAdjustedPreviewRange({
+      startSurahNumber: startNum,
+      startVerseNumber: startVerse ? parseInt(startVerse) : 1,
+      endSurahNumber: endNum,
+      endVerseNumber: endVerse ? parseInt(endVerse) : (SURAHS.find((surah) => surah.number === endNum)?.verseCount || 1),
+      dailyPages: parseFloat(dailyPages),
+      direction,
+      prevStartSurah,
+      prevStartVerse,
+      prevEndSurah,
+      prevEndVerse,
+      completedJuzs: selectedStudent?.completed_juzs,
+    })
+    const total = adjustedPreview.totalPages
+    const days = adjustedPreview.totalDays
 
     setIsSaving(true)
     try {
@@ -521,9 +695,63 @@ export default function TeacherStudentPlansPage() {
   const nextStartFromPrevious = hasPrevious && prevStartSurah && prevEndSurah && prevEndVerse
     ? getNextStartFromPrevious(prevStartSurah, prevEndSurah, prevEndVerse)
     : null
+  const masteryJuzLabel = formatJuzList(selectedStudent?.current_juzs)
+  const hasStoredPreviousMemorization = Boolean(
+    (selectedStudent?.completed_juzs?.length || 0) > 0 ||
+    (selectedStudent?.memorized_start_surah && selectedStudent?.memorized_end_surah),
+  )
+  const shouldHidePreviousToggle = hasStoredPreviousMemorization
+  const isMasteryOnlyStudent = Boolean((selectedStudent?.current_juzs?.length || 0) > 0) && !hasStoredPreviousMemorization
+  const completedJuzSet = new Set(selectedStudent?.completed_juzs || [])
+  const completedJuzBounds = (selectedStudent?.completed_juzs || [])
+    .map((juzNumber) => getJuzBounds(juzNumber))
+    .filter((bounds): bounds is NonNullable<ReturnType<typeof getJuzBounds>> => Boolean(bounds))
+  const isAyahBlockedByCompletedJuzs = (surahNumber: number, verseNumber: number) => {
+    if (completedJuzBounds.length === 0) return false
+
+    return completedJuzBounds.some((bounds) => (
+      compareAyahRefs(surahNumber, verseNumber, bounds.startSurahNumber, bounds.startVerseNumber) >= 0
+      && compareAyahRefs(surahNumber, verseNumber, bounds.endSurahNumber, bounds.endVerseNumber) <= 0
+    ))
+  }
+  const getAvailableVerseNumbers = (surahNumber: number, minVerse: number, maxVerse: number) => {
+    if (maxVerse < minVerse) return []
+
+    return Array.from({ length: maxVerse - minVerse + 1 }, (_, index) => minVerse + index)
+      .filter((verseNumber) => !isAyahBlockedByCompletedJuzs(surahNumber, verseNumber))
+  }
+  const isSurahBlockedByCompletedJuzs = (surahNumber: number, minVerse = 1, maxVerse?: number) => {
+    const surah = SURAHS.find((item) => item.number === surahNumber)
+    if (!surah) return true
+
+    const safeMaxVerse = Math.min(maxVerse ?? surah.verseCount, surah.verseCount)
+    return getAvailableVerseNumbers(surahNumber, Math.max(1, minVerse), safeMaxVerse).length === 0
+  }
 
   const startSurahOptions = (() => {
     let options = SURAHS
+
+    options = options.filter((surah) => {
+      if (startSurah && surah.number === parseInt(startSurah, 10)) return true
+      if (nextStartFromPrevious?.surahNumber === surah.number) return true
+
+      let minVerse = 1
+      let maxVerse = surah.verseCount
+
+      if (nextStartFromPrevious?.surahNumber === surah.number) {
+        const previousStartNumber = parseInt(prevStartSurah || "0", 10)
+        const previousEndNumber = parseInt(prevEndSurah || "0", 10)
+        const isDescendingPrevious = previousStartNumber > previousEndNumber
+
+        if (isDescendingPrevious) {
+          maxVerse = nextStartFromPrevious.verseNumber
+        } else {
+          minVerse = nextStartFromPrevious.verseNumber
+        }
+      }
+
+      return !isSurahBlockedByCompletedJuzs(surah.number, minVerse, maxVerse)
+    })
 
     if (hasPrevious && prevStartSurah && prevEndSurah) {
       const previousStart = parseInt(prevStartSurah)
@@ -560,7 +788,7 @@ export default function TeacherStudentPlansPage() {
       }
     }
 
-    return Array.from({ length: Math.max(0, maxVerse - minVerse + 1) }, (_, index) => minVerse + index)
+    return getAvailableVerseNumbers(selectedSurah.number, minVerse, maxVerse)
   })()
 
   const prevStartVerseOptions = (() => {
@@ -575,7 +803,18 @@ export default function TeacherStudentPlansPage() {
   const endSurahOptions = (() => {
     if (!startNum) return startSurahOptions
 
-    return startSurahOptions.slice().sort((left, right) => left.number - right.number)
+    return startSurahOptions
+      .filter((surah) => {
+        if (endSurah && surah.number === parseInt(endSurah, 10)) return true
+
+        const minVerse = startNum && surah.number === startNum && startVerse
+          ? parseInt(startVerse, 10)
+          : 1
+
+        return !isSurahBlockedByCompletedJuzs(surah.number, minVerse)
+      })
+      .slice()
+      .sort((left, right) => left.number - right.number)
   })()
 
   const endVerseOptions = (() => {
@@ -591,7 +830,7 @@ export default function TeacherStudentPlansPage() {
       minVerse = parseInt(startVerse, 10)
     }
 
-    return Array.from({ length: Math.max(0, maxVerse - minVerse + 1) }, (_, index) => minVerse + index)
+    return getAvailableVerseNumbers(selectedSurah.number, minVerse, maxVerse)
   })()
 
   const prevEndVerseOptions = (() => {
@@ -612,14 +851,35 @@ export default function TeacherStudentPlansPage() {
 
   const isEndValid = endNum !== null && endSurahOptions.some((surah) => surah.number === endNum)
   const previewTotal = startSurah && endSurah && isEndValid
-    ? calculateTotalPages(
-        parseInt(startSurah),
-        parseInt(endSurah),
-        startVerse ? parseInt(startVerse) : null,
-        endVerse ? parseInt(endVerse) : null,
-      )
+    ? getAdjustedPreviewRange({
+        startSurahNumber: parseInt(startSurah),
+        startVerseNumber: startVerse ? parseInt(startVerse) : 1,
+        endSurahNumber: parseInt(endSurah),
+        endVerseNumber: endVerse ? parseInt(endVerse) : (SURAHS.find((surah) => surah.number === parseInt(endSurah))?.verseCount || 1),
+        dailyPages: parseFloat(dailyPages),
+        direction,
+        prevStartSurah,
+        prevStartVerse,
+        prevEndSurah,
+        prevEndVerse,
+        completedJuzs: selectedStudent?.completed_juzs,
+      }).totalPages
     : 0
-  const previewDays = previewTotal > 0 && dailyPages ? calculateTotalDays(previewTotal, parseFloat(dailyPages)) : 0
+  const previewDays = startSurah && endSurah && isEndValid
+    ? getAdjustedPreviewRange({
+        startSurahNumber: parseInt(startSurah),
+        startVerseNumber: startVerse ? parseInt(startVerse) : 1,
+        endSurahNumber: parseInt(endSurah),
+        endVerseNumber: endVerse ? parseInt(endVerse) : (SURAHS.find((surah) => surah.number === parseInt(endSurah))?.verseCount || 1),
+        dailyPages: parseFloat(dailyPages),
+        direction,
+        prevStartSurah,
+        prevStartVerse,
+        prevEndSurah,
+        prevEndVerse,
+        completedJuzs: selectedStudent?.completed_juzs,
+      }).totalDays
+    : 0
 
   useEffect(() => {
     if (startOpen && startSurah) {
@@ -764,7 +1024,10 @@ export default function TeacherStudentPlansPage() {
                 {students.map((student) => {
                   const plan = studentPlans[student.id]
                   const progress = studentProgress[student.id] || 0
-                  const hasStoredMemorized = !!(student.memorized_start_surah && student.memorized_end_surah)
+                  const hasStoredMemorized = Boolean(
+                    (student.completed_juzs?.length || 0) > 0 ||
+                    (student.memorized_start_surah && student.memorized_end_surah),
+                  )
 
                   return (
                     <div key={student.id} className="px-6 py-4 flex items-center gap-4">
@@ -842,30 +1105,38 @@ export default function TeacherStudentPlansPage() {
           </DialogHeader>
 
           <div className="px-6 py-5 space-y-4 overflow-y-auto max-h-[70vh]">
+            {masteryJuzLabel && (
+              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs font-semibold text-sky-700">
+                أجزاء تحتاج إلى إتقان: {masteryJuzLabel}.
+              </div>
+            )}
+            {!isMasteryOnlyStudent && (
             <div className="space-y-2 pt-2 pb-2 border-y border-[#D4AF37]/20">
-              <label
-                className="plan-history-checkbox text-sm font-semibold text-[#1a2332]"
-                onClick={(e) => {
-                  if (!isPreviousLocked) return
+              {!shouldHidePreviousToggle && (
+                <label
+                  className="plan-history-checkbox text-sm font-semibold text-[#1a2332]"
+                  onClick={(e) => {
+                    if (!isPreviousLocked) return
 
-                  e.preventDefault()
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={hasPrevious}
-                  disabled={isPreviousLocked}
-                  onChange={(e) => setHasPrevious(e.target.checked)}
-                />
-                <span className="plan-history-checkbox__label">هل يوجد حفظ سابق؟</span>
-                <span className="plan-history-checkbox__mark" aria-hidden="true" />
-              </label>
+                    e.preventDefault()
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={hasPrevious}
+                    disabled={isPreviousLocked}
+                    onChange={(e) => setHasPrevious(e.target.checked)}
+                  />
+                  <span className="plan-history-checkbox__label">هل يوجد حفظ سابق؟</span>
+                  <span className="plan-history-checkbox__mark" aria-hidden="true" />
+                </label>
+              )}
 
               {isPreviousLocked && hasPrevious && (
                 <p className="text-[11px] font-medium text-[#8a6f1f]">الحفظ السابق مقفل لأنه محفوظ فعلياً، ويجب حذف الخطة إذا أردت إعادة حفظ الطالب.</p>
               )}
 
-              {hasPrevious && (
+              {hasPrevious && !(isEditingPlan && isPreviousLocked) && (
                 <div className="bg-[#D4AF37]/5 p-3 rounded-xl border border-[#D4AF37]/20 space-y-3 mt-2">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <div className="space-y-1.5 flex flex-col w-full">
@@ -991,6 +1262,7 @@ export default function TeacherStudentPlansPage() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="space-y-1.5 flex flex-col w-full">
@@ -1103,7 +1375,7 @@ export default function TeacherStudentPlansPage() {
               </div>
             </div>
 
-            <div className="grid md:grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3 mb-2 pb-2">
               <div className="space-y-1.5 flex flex-col w-full">
                 <label className="text-sm font-semibold text-[#1a2332]">المقدار اليومي</label>
                 <Select value={dailyPages} onValueChange={setDailyPages}>
@@ -1119,9 +1391,7 @@ export default function TeacherStudentPlansPage() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-2 gap-3 mb-2 pb-2">
               <div className="space-y-1.5">
                 <label className="text-sm font-semibold text-[#1a2332]">مقدار المراجعة اليومي</label>
                 <Select value={muraajaaPages} onValueChange={setMuraajaaPages} dir="rtl">
@@ -1153,12 +1423,25 @@ export default function TeacherStudentPlansPage() {
                   </SelectContent>
                 </Select>
               </div>
+
             </div>
 
             {previewTotal > 0 && (() => {
-              const previewStart = direction === "asc"
-                ? SURAHS.find((surah) => surah.number === Math.min(parseInt(startSurah), parseInt(endSurah)))
-                : SURAHS.find((surah) => surah.number === Math.max(parseInt(startSurah), parseInt(endSurah)))
+              const adjustedPreview = getAdjustedPreviewRange({
+                startSurahNumber: parseInt(startSurah),
+                startVerseNumber: startVerse ? parseInt(startVerse) : 1,
+                endSurahNumber: parseInt(endSurah),
+                endVerseNumber: endVerse ? parseInt(endVerse) : (SURAHS.find((surah) => surah.number === parseInt(endSurah))?.verseCount || 1),
+                dailyPages: parseFloat(dailyPages),
+                direction,
+                prevStartSurah,
+                prevStartVerse,
+                prevStartVerse,
+                prevEndSurah,
+                prevEndVerse,
+                completedJuzs: selectedStudent?.completed_juzs,
+              })
+              const previewStart = SURAHS.find((surah) => surah.number === adjustedPreview.startSurahNumber)
               const previewEnd = direction === "asc"
                 ? SURAHS.find((surah) => surah.number === Math.max(parseInt(startSurah), parseInt(endSurah)))
                 : SURAHS.find((surah) => surah.number === Math.min(parseInt(startSurah), parseInt(endSurah)))
@@ -1170,7 +1453,7 @@ export default function TeacherStudentPlansPage() {
                     <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-lg font-semibold text-xs">تبدأ من</span>
                     <span className="font-bold text-[#1a2332]">
                       {previewStart?.name}
-                      {startVerse ? ` آية ${startVerse}` : ""}
+                      {adjustedPreview.startVerseNumber ? ` آية ${adjustedPreview.startVerseNumber}` : ""}
                     </span>
                     <span className="text-neutral-300">←</span>
                     <span className="text-neutral-500 text-xs">
@@ -1236,7 +1519,10 @@ export default function TeacherStudentPlansPage() {
               <p className="text-sm text-neutral-400 text-center py-10">لا يوجد طلاب</p>
             ) : (
               students.map((student) => {
-                const hasStoredMemorized = !!(student.memorized_start_surah && student.memorized_end_surah)
+                const hasStoredMemorized = Boolean(
+                  (student.completed_juzs?.length || 0) > 0 ||
+                  (student.memorized_start_surah && student.memorized_end_surah),
+                )
 
                 return (
                   <div key={student.id} className="flex items-center justify-between gap-3 rounded-xl border border-neutral-200 px-4 py-3">
